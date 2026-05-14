@@ -582,6 +582,11 @@ class PartsMixerWindow(QMainWindow):
 
         size_layout = QHBoxLayout()
         size_layout.addWidget(QLabel('サイズ:'))
+        self.slider_brush_size = QSlider(Qt.Horizontal)
+        self.slider_brush_size.setRange(1, 200)
+        self.slider_brush_size.setValue(30)
+        self.slider_brush_size.valueChanged.connect(self._on_brush_size_changed)
+        size_layout.addWidget(self.slider_brush_size)
         self.spin_brush_size = QSpinBox()
         self.spin_brush_size.setRange(1, 200)
         self.spin_brush_size.setValue(30)
@@ -1703,6 +1708,14 @@ class PartsMixerWindow(QMainWindow):
     # === ブラシ設定 ===
 
     def _on_brush_size_changed(self, value: int):
+        if hasattr(self, 'slider_brush_size') and self.slider_brush_size.value() != value:
+            self.slider_brush_size.blockSignals(True)
+            self.slider_brush_size.setValue(value)
+            self.slider_brush_size.blockSignals(False)
+        if hasattr(self, 'spin_brush_size') and self.spin_brush_size.value() != value:
+            self.spin_brush_size.blockSignals(True)
+            self.spin_brush_size.setValue(value)
+            self.spin_brush_size.blockSignals(False)
         self.eye_canvas.set_brush_size(value)
         self.mouth_canvas.set_brush_size(value)
 
