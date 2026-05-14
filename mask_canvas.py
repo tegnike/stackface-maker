@@ -92,6 +92,19 @@ class MaskCanvas(QWidget):
             return None
         return self.mask.copy()
 
+    def set_mask(self, mask: np.ndarray):
+        """マスクを外部から設定"""
+        if self.base_image is None:
+            return
+        h, w = self.base_image.shape[:2]
+        if mask.shape != (h, w):
+            mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+        self.mask = np.where(mask > 0, 255, 0).astype(np.uint8)
+        self.clear_history()
+        self._update_display_pixmap()
+        self.update()
+        self.maskChanged.emit(self.mask.copy())
+
     def clear_mask(self):
         """マスクをクリア"""
         if self.mask is not None:
