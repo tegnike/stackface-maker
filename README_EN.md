@@ -49,12 +49,14 @@ uv run python parts_mixer.py
 
 ---
 
-## Output Files
+## Output Folder and Files
 
-- `{base}_eyeOFF_mouthOFF.png`
-- `{base}_eyeON_mouthOFF.png`
-- `{base}_eyeOFF_mouthON.png`
-- `{base}_eyeON_mouthON.png`
+The app creates a `{emotion}_{base}/` folder in the selected output directory and saves:
+
+- `eyeOFF_mouthOFF.png`
+- `eyeON_mouthOFF.png`
+- `eyeOFF_mouthON.png`
+- `eyeON_mouthON.png`
 
 ---
 

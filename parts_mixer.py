@@ -110,7 +110,7 @@ class GeminiGenerateWorker(QThread):
 
 
 class GeminiVariantWorker(QThread):
-    """2枚モード用の変化画像を生成するワーカー"""
+    """2枚モード用の反対状態画像を生成するワーカー"""
 
     progress = Signal(str)
     finished = Signal(str)
@@ -141,7 +141,7 @@ class GeminiVariantWorker(QThread):
     def run(self):
         try:
             if self.provider == 'openai':
-                self.progress.emit('OpenAIで変化画像を生成中...')
+                self.progress.emit('OpenAIで反対状態の画像を生成中...')
                 prompt = build_counterpart_prompt(self.base_eye_on, self.base_mouth_on)
                 result = generate_counterpart_image_openai(
                     api_key=self.api_key,
@@ -151,7 +151,7 @@ class GeminiVariantWorker(QThread):
                     size='auto',
                 )
             else:
-                self.progress.emit('Geminiで変化画像を生成中...')
+                self.progress.emit('Geminiで反対状態の画像を生成中...')
                 result = generate_counterpart_image(
                     api_key=self.api_key,
                     image_path=self.source_path,
@@ -342,12 +342,11 @@ class QuadPreviewWidget(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        layout = QGridLayout(self)
-        layout.setSpacing(5)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(6)
+        layout.setContentsMargins(4, 4, 4, 4)
 
         for i, label_text in enumerate(self._labels):
-            row, col = divmod(i, 2)
-
             container = QFrame()
             container.setFrameStyle(QFrame.StyledPanel)
             container.setStyleSheet('background-color: #2d2d30; border: 1px solid #3e3e42;')
@@ -363,11 +362,13 @@ class QuadPreviewWidget(QWidget):
 
             # プレビュー
             preview = PreviewWidget()
-            preview.setMinimumSize(150, 150)
+            preview.setMinimumSize(320, 190)
             self._previews.append(preview)
             container_layout.addWidget(preview)
 
-            layout.addWidget(container, row, col)
+            layout.addWidget(container)
+
+        layout.addStretch()
 
     def set_images(self, images: List[Optional[np.ndarray]]):
         """4枚の画像を設定"""
@@ -383,9 +384,11 @@ class QuadPreviewWidget(QWidget):
             preview.set_scale(scale)
 
     def fit_to_window(self):
-        """全プレビューをウィンドウにフィット"""
+        """全プレビューに画像全体が収まるようにフィット"""
+        fitted_scale = 1.0
         for preview in self._previews:
-            preview.fit_to_window()
+            fitted_scale = preview.fit_to_window()
+        return fitted_scale
 
 
 class PartsMixerWindow(QMainWindow):
@@ -603,17 +606,6 @@ class PartsMixerWindow(QMainWindow):
         step3.setStyleSheet(step_style)
         pair_layout.addWidget(step3)
 
-        self.btn_pair_variant = QPushButton('変化画像を選択...')
-        self.btn_pair_variant.setToolTip('基準画像と目/口が反対の画像を手動で選択します')
-        self.btn_pair_variant.setStyleSheet('background-color: #0e639c; color: white; min-height: 24px;')
-        self.btn_pair_variant.clicked.connect(self._select_pair_variant)
-        pair_layout.addWidget(self.btn_pair_variant)
-
-        self.lbl_pair_variant = QLabel('変化: 未選択')
-        self.lbl_pair_variant.setWordWrap(True)
-        self.lbl_pair_variant.setStyleSheet('color: #888;')
-        pair_layout.addWidget(self.lbl_pair_variant)
-
         model_layout = QVBoxLayout()
         model_label = QLabel('画像生成モデル:')
         model_label.setWordWrap(True)
@@ -668,6 +660,26 @@ class PartsMixerWindow(QMainWindow):
         self.btn_generate_variant.setStyleSheet('background-color: #0e639c; color: white; min-height: 24px;')
         self.btn_generate_variant.clicked.connect(self._generate_pair_variant_with_nanobanana)
         pair_layout.addWidget(self.btn_generate_variant)
+
+        self.lbl_or_pair_variant = QLabel('または')
+        self.lbl_or_pair_variant.setAlignment(Qt.AlignCenter)
+        self.lbl_or_pair_variant.setStyleSheet('color: #9ca3af;')
+        pair_layout.addWidget(self.lbl_or_pair_variant)
+
+        self.btn_pair_variant = QPushButton('反対状態の画像を選択...')
+        self.btn_pair_variant.setToolTip('すでに用意した、基準画像とは目と口が反対の画像を選択します')
+        self.btn_pair_variant.setStyleSheet('background-color: #0e639c; color: white; min-height: 24px;')
+        self.btn_pair_variant.clicked.connect(self._select_pair_variant)
+        pair_layout.addWidget(self.btn_pair_variant)
+
+        self.lbl_pair_variant = QLabel('反対状態画像: 未選択')
+        self.lbl_pair_variant.setWordWrap(True)
+        self.lbl_pair_variant.setStyleSheet('color: #888;')
+        pair_layout.addWidget(self.lbl_pair_variant)
+
+        step4 = QLabel('4. 4パターン作成')
+        step4.setStyleSheet(step_style)
+        pair_layout.addWidget(step4)
 
         self.btn_setup_pair = QPushButton('4パターンを作成')
         self.btn_setup_pair.setStyleSheet('background-color: #2563eb; color: white; min-height: 24px;')
@@ -798,7 +810,7 @@ class PartsMixerWindow(QMainWindow):
 
         self.check_color_match = QCheckBox('生成画像の色を合わせる')
         self.check_color_match.setChecked(True)
-        self.check_color_match.setToolTip('AI生成で肌や髪の色が少し変わった場合に、感情画像や変化画像を標準画像の色味へ寄せます')
+        self.check_color_match.setToolTip('AI生成で肌や髪の色が少し変わった場合に、感情画像や反対状態画像を標準画像の色味へ寄せます')
         brush_layout.addWidget(self.check_color_match)
         color_match_help = QLabel('AI生成で肌や髪の色が変わった場合に、標準画像の色味へ寄せます。')
         color_match_help.setWordWrap(True)
@@ -960,7 +972,12 @@ class PartsMixerWindow(QMainWindow):
 
         # 4パターンプレビュー
         self.quad_preview = QuadPreviewWidget()
-        preview_layout.addWidget(self.quad_preview)
+        preview_scroll = QScrollArea()
+        preview_scroll.setWidgetResizable(True)
+        preview_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        preview_scroll.setFrameShape(QFrame.NoFrame)
+        preview_scroll.setWidget(self.quad_preview)
+        preview_layout.addWidget(preview_scroll)
 
         right_layout.addWidget(preview_group)
         splitter.addWidget(right_panel)
@@ -1151,13 +1168,13 @@ class PartsMixerWindow(QMainWindow):
 
     def _select_pair_variant(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, '変化画像を選択', '',
+            self, '反対状態の画像を選択', '',
             '画像 (*.png *.jpg *.jpeg *.bmp *.webp)'
         )
         if not path:
             return
         self.pair_variant_path = path
-        self.lbl_pair_variant.setText(f'変化: {Path(path).name}')
+        self.lbl_pair_variant.setText(f'反対状態画像: {Path(path).name}')
         self.lbl_pair_variant.setStyleSheet('color: #4ade80;')
         self._update_pair_setup_state()
 
@@ -1273,7 +1290,7 @@ class PartsMixerWindow(QMainWindow):
         self.pair_variant_path = ''
         self.lbl_pair_base.setText(f'感情画像: {Path(output_path).name}')
         self.lbl_pair_base.setStyleSheet('color: #4ade80;')
-        self.lbl_pair_variant.setText('変化: 未選択')
+        self.lbl_pair_variant.setText('反対状態画像: 未選択')
         self.lbl_pair_variant.setStyleSheet('color: #888;')
         self._update_pair_base_preview(image=generated)
         self._update_pair_setup_state()
@@ -1392,7 +1409,7 @@ class PartsMixerWindow(QMainWindow):
             self.progress.close()
         self.btn_generate_variant.setEnabled(True)
         self.pair_variant_path = output_path
-        self.lbl_pair_variant.setText(f'変化: {Path(output_path).name}')
+        self.lbl_pair_variant.setText(f'反対状態画像: {Path(output_path).name}')
         self.lbl_pair_variant.setStyleSheet('color: #4ade80;')
         self._update_pair_setup_state()
         self._setup_two_image_mode()
@@ -1404,7 +1421,7 @@ class PartsMixerWindow(QMainWindow):
 
     def _setup_two_image_mode(self):
         if not self.pair_base_path or not self.pair_variant_path:
-            QMessageBox.warning(self, '警告', '基準画像と変化画像を選択してください。')
+            QMessageBox.warning(self, '警告', '基準画像と反対状態の画像を選択してください。')
             return
 
         try:
@@ -1474,7 +1491,7 @@ class PartsMixerWindow(QMainWindow):
         self._schedule_preview_update()
 
     def _align_variant_to_base(self, base: np.ndarray, variant: np.ndarray) -> tuple:
-        """変化画像を基準画像へ軽く位置合わせする"""
+        """反対状態の画像を基準画像へ軽く位置合わせする"""
         try:
             base_bgr = self._to_bgr_for_diff(base)
             variant_bgr = self._to_bgr_for_diff(variant)
@@ -2332,8 +2349,7 @@ class PartsMixerWindow(QMainWindow):
         self._apply_preview_zoom()
 
     def _preview_fit(self):
-        self.quad_preview.fit_to_window()
-        self.preview_zoom_level = 1.0
+        self.preview_zoom_level = self.quad_preview.fit_to_window()
         self.lbl_preview_zoom.setText('Fit')
 
     def _apply_preview_zoom(self):
@@ -2367,40 +2383,49 @@ class PartsMixerWindow(QMainWindow):
 
         output_path = Path(output_dir)
         base_name = Path(self.source_path).stem if self.source_path else 'output'
-        emotion_prefix = self.current_emotion or 'neutral'
+        emotion_label = self.combo_emotion.currentText() if hasattr(self, 'combo_emotion') else (self.current_emotion or 'neutral')
+        folder_name = self._safe_path_name(f'{emotion_label}_{base_name}')
+        output_folder = output_path / folder_name
 
         # 既存ファイルチェック
         names = [
-            f'{emotion_prefix}_{base_name}_eyeOFF_mouthOFF.png',
-            f'{emotion_prefix}_{base_name}_eyeON_mouthOFF.png',
-            f'{emotion_prefix}_{base_name}_eyeOFF_mouthON.png',
-            f'{emotion_prefix}_{base_name}_eyeON_mouthON.png'
+            'eyeOFF_mouthOFF.png',
+            'eyeON_mouthOFF.png',
+            'eyeOFF_mouthON.png',
+            'eyeON_mouthON.png'
         ]
 
-        existing = [n for n in names if (output_path / n).exists()]
+        existing = [n for n in names if (output_folder / n).exists()]
         if existing:
             reply = QMessageBox.question(
                 self, '確認',
-                f'以下のファイルが既に存在します:\n{", ".join(existing)}\n\n上書きしますか？',
+                f'以下のファイルが既に存在します:\n{output_folder}\n{", ".join(existing)}\n\n上書きしますか？',
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
+        output_folder.mkdir(parents=True, exist_ok=True)
         saved = 0
-        for i, (name, image) in enumerate(zip(names, self.generated_patterns)):
+        for name, image in zip(names, self.generated_patterns):
             try:
                 output_image = self._prepare_output_image(image)
-                save_image(str(output_path / name), output_image)
+                save_image(str(output_folder / name), output_image)
                 saved += 1
             except Exception as e:
                 QMessageBox.warning(self, 'エラー', f'{name} の保存に失敗: {e}')
 
         QMessageBox.information(
             self, '完了',
-            f'{saved} 枚の画像を保存しました:\n{output_dir}'
+            f'{saved} 枚の画像を保存しました:\n{output_folder}'
         )
+
+    def _safe_path_name(self, name: str) -> str:
+        """フォルダ名に使いにくい文字を置き換える"""
+        safe = ''.join('_' if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in name)
+        safe = safe.strip().strip('.')
+        return safe or 'output'
 
     def _prepare_output_image(self, image: np.ndarray) -> np.ndarray:
         """保存用画像を必要に応じて実機サイズへ変換"""

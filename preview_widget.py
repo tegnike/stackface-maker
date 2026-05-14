@@ -60,7 +60,7 @@ class PreviewWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        self.label = QLabel("画像を選択してください")
+        self.label = QLabel("")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setStyleSheet("background-color: #2b2b2b; color: #888;")
         
@@ -148,36 +148,51 @@ class PreviewWidget(QWidget):
         self.update_display()
     
     def fit_to_window(self):
-        """ウィンドウにフィット"""
+        """現在の表示枠に画像全体が収まるようにフィット"""
         if self.base_image is None:
-            return
-        
-        # スクロールエリアのサイズを取得
-        parent = self.parent()
-        while parent and not isinstance(parent, QScrollArea):
-            parent = parent.parent()
-        
-        if parent:
-            available_w = parent.viewport().width() - 20
-            available_h = parent.viewport().height() - 20
-        else:
-            available_w = self.width() - 20
-            available_h = self.height() - 20
-        
+            return self.scale
+
+        available_w = self.scroll.viewport().width() - 16
+        available_h = self.scroll.viewport().height() - 16
+        if available_w <= 0:
+            available_w = self.width() - 16
+        if available_h <= 0:
+            available_h = self.height() - 16
+
         img_h, img_w = self.base_image.shape[:2]
-        
-        # 画像が収まるスケールを計算
+        if img_w <= 0 or img_h <= 0:
+            return self.scale
+
         scale_w = available_w / img_w if img_w > 0 else 1.0
         scale_h = available_h / img_h if img_h > 0 else 1.0
-        self.scale = min(scale_w, scale_h, 1.0)  # 1.0より大きくしない
-        
+        self.scale = max(self.min_scale, min(self.max_scale, scale_w, scale_h, 1.0))
+
         self.scale_changed.emit(self.scale)
         self.update_display()
+        return self.scale
+
+    def fit_to_width(self):
+        """表示幅に合わせてフィット"""
+        if self.base_image is None:
+            return self.scale
+
+        available_w = self.scroll.viewport().width() - 16
+        if available_w <= 0:
+            available_w = self.width() - 16
+
+        img_h, img_w = self.base_image.shape[:2]
+        if img_w <= 0:
+            return self.scale
+
+        self.scale = max(self.min_scale, min(self.max_scale, available_w / img_w))
+        self.scale_changed.emit(self.scale)
+        self.update_display()
+        return self.scale
     
     def update_display(self):
         """表示を更新"""
         if self.base_image is None:
-            self.label.setText("画像を選択してください")
+            self.label.clear()
             return
         
         # 表示画像を作成
