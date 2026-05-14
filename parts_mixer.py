@@ -609,6 +609,11 @@ class PartsMixerWindow(QMainWindow):
 
         self.radio_add.toggled.connect(self._on_mode_toggled)
 
+        self.check_color_match = QCheckBox('生成画像の色を基準画像に合わせる')
+        self.check_color_match.setChecked(True)
+        self.check_color_match.setToolTip('AI生成で肌や髪の色が少し変わった場合に、変化画像を基準画像の色味へ寄せます')
+        brush_layout.addWidget(self.check_color_match)
+
         # Undo/Redo
         undo_layout = QHBoxLayout()
         self.btn_undo = QPushButton('戻す')
@@ -1038,6 +1043,8 @@ class PartsMixerWindow(QMainWindow):
             variant = cv2.resize(variant, base_size, interpolation=cv2.INTER_LINEAR)
 
         aligned_variant, success, score = self._align_variant_to_base(base, variant)
+        if self.check_color_match.isChecked():
+            aligned_variant = self._match_variant_color_to_base(base, aligned_variant)
 
         self.current_job_id += 1
         self.two_image_mode = True
@@ -1099,6 +1106,65 @@ class PartsMixerWindow(QMainWindow):
             return variant.copy(), False, result.get('score', 0.0)
         except Exception:
             return variant.copy(), False, 0.0
+
+    def _match_variant_color_to_base(self, base: np.ndarray, variant: np.ndarray) -> np.ndarray:
+        """生成画像の全体的な色味を基準画像へ寄せる"""
+        if base is None or variant is None:
+            return variant
+
+        base_bgr = self._to_bgr_for_diff(base).astype(np.float32)
+        variant_bgr = self._to_bgr_for_diff(variant).astype(np.float32)
+
+        if base_bgr.shape[:2] != variant_bgr.shape[:2]:
+            variant_bgr = cv2.resize(variant_bgr, (base_bgr.shape[1], base_bgr.shape[0]))
+
+        sample_mask = self._build_color_match_sample_mask(base_bgr, variant_bgr)
+        corrected = variant_bgr.copy()
+
+        for channel in range(3):
+            base_values = base_bgr[:, :, channel][sample_mask]
+            variant_values = variant_bgr[:, :, channel][sample_mask]
+            if base_values.size < 100:
+                continue
+
+            base_mean = float(base_values.mean())
+            variant_mean = float(variant_values.mean())
+            base_std = float(base_values.std())
+            variant_std = float(variant_values.std())
+
+            if variant_std < 1.0:
+                gain = 1.0
+            else:
+                gain = base_std / variant_std
+            # 強すぎる補正は目や口の色を壊すため、穏やかに制限する。
+            gain = max(0.85, min(1.15, gain))
+            offset = max(-18.0, min(18.0, base_mean - variant_mean * gain))
+            corrected[:, :, channel] = corrected[:, :, channel] * gain + offset
+
+        corrected = np.clip(corrected, 0, 255).astype(np.uint8)
+
+        result = variant.copy()
+        if result.ndim == 2:
+            return cv2.cvtColor(corrected, cv2.COLOR_BGR2GRAY)
+        if result.shape[2] == 4:
+            result[:, :, :3] = corrected
+            return result
+        result[:, :, :3] = corrected
+        return result
+
+    def _build_color_match_sample_mask(self, base_bgr: np.ndarray, variant_bgr: np.ndarray) -> np.ndarray:
+        """目口など大きく変わった部分を避けて色補正用サンプル領域を作る"""
+        diff = cv2.absdiff(base_bgr.astype(np.uint8), variant_bgr.astype(np.uint8))
+        gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
+
+        sample_mask = gray < 28
+        # 目と口の周辺は意図的に変わるため、色補正サンプルから外す。
+        sample_mask[: int(h * 0.62), :] &= gray[: int(h * 0.62), :] < 18
+        sample_mask[int(h * 0.50):, int(w * 0.18): int(w * 0.82)] = False
+
+        alpha_like = np.ones((h, w), dtype=bool)
+        return sample_mask & alpha_like
 
     # === ドラッグ&ドロップ ===
 
