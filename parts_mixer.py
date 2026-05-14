@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QFileDialog, QMessageBox, QGroupBox,
     QSplitter, QScrollArea, QProgressDialog, QSpinBox, QSlider,
     QRadioButton, QButtonGroup, QComboBox, QGridLayout, QFrame,
-    QCheckBox, QLineEdit
+    QCheckBox, QLineEdit, QTabWidget, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QPixmap, QShortcut, QKeySequence
@@ -36,6 +36,7 @@ from gemini_generator import (
     GeminiImageGenerationError,
     build_counterpart_prompt,
     generate_counterpart_image,
+    generate_emotion_image,
     generate_expression_sheet,
 )
 from openai_generator import (
@@ -181,6 +182,65 @@ class GeminiVariantWorker(QThread):
                 raise GeminiImageGenerationError('生成画像の保存に失敗しました')
 
             self.finished.emit(self.output_path)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class GeminiEmotionWorker(QThread):
+    """標準表情から感情用の基準画像を生成するワーカー"""
+
+    progress = Signal(str)
+    finished = Signal(str, str)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        source_path: str,
+        output_path: str,
+        api_key: str,
+        model: str,
+        image_size: str,
+        emotion: str,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.source_path = source_path
+        self.output_path = output_path
+        self.api_key = api_key
+        self.model = model
+        self.image_size = image_size
+        self.emotion = emotion
+
+    def run(self):
+        try:
+            self.progress.emit('感情画像を生成中...')
+            result = generate_emotion_image(
+                api_key=self.api_key,
+                image_path=self.source_path,
+                emotion=self.emotion,
+                model=self.model,
+                image_size=self.image_size,
+            )
+
+            self.progress.emit('生成画像を入力画像サイズへ整形中...')
+            ref = load_image_as_bgra(self.source_path)
+            image_buf = np.frombuffer(result.image_bytes, dtype=np.uint8)
+            generated = cv2.imdecode(image_buf, cv2.IMREAD_UNCHANGED)
+            if generated is None:
+                raise GeminiImageGenerationError('生成画像の読み込みに失敗しました')
+
+            if generated.ndim == 2:
+                generated = cv2.cvtColor(generated, cv2.COLOR_GRAY2BGRA)
+            elif generated.shape[2] == 3:
+                generated = cv2.cvtColor(generated, cv2.COLOR_BGR2BGRA)
+            elif generated.shape[2] != 4:
+                raise GeminiImageGenerationError(f'未対応の生成画像形式です: {generated.shape}')
+
+            generated = cv2.resize(generated, (ref.shape[1], ref.shape[0]), interpolation=cv2.INTER_AREA)
+            if not save_image(self.output_path, generated):
+                raise GeminiImageGenerationError('生成画像の保存に失敗しました')
+
+            self.finished.emit(self.output_path, self.source_path)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -345,6 +405,7 @@ class PartsMixerWindow(QMainWindow):
         self.worker: Optional[SliceAlignWorker] = None
         self.gemini_worker: Optional[GeminiGenerateWorker] = None
         self.gemini_variant_worker: Optional[GeminiVariantWorker] = None
+        self.gemini_emotion_worker: Optional[GeminiEmotionWorker] = None
         self.compositor = Compositor(CompositeConfig())
         self.aligner = Aligner(AlignConfig())
         self.two_image_mode: bool = False
@@ -354,6 +415,8 @@ class PartsMixerWindow(QMainWindow):
         self.pair_variant_path: str = ''
         self.selected_provider: str = 'gemini'
         self.selected_model: str = DEFAULT_MODEL
+        self.current_emotion: str = 'neutral'
+        self.neutral_base_path: str = ''
 
         # 選択インデックス
         self.base_index: int = 0
@@ -385,6 +448,43 @@ class PartsMixerWindow(QMainWindow):
         left_panel.setMaximumWidth(400)
         left_layout = QVBoxLayout(left_panel)
 
+        self.control_tabs = QTabWidget()
+        self.control_tabs.setDocumentMode(True)
+        self.control_tabs.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #3e3e42; }
+            QTabBar::tab {
+                background: #2d2d30;
+                color: #cccccc;
+                padding: 7px 12px;
+                border: 1px solid #3e3e42;
+                border-bottom: none;
+            }
+            QTabBar::tab:selected { background: #0e639c; color: white; }
+            QTabBar::tab:!selected:hover { background: #3c3c3c; }
+        """)
+
+        def make_control_tab() -> tuple[QScrollArea, QVBoxLayout]:
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            tab = QWidget()
+            tab.setMinimumWidth(0)
+            tab.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            tab_layout = QVBoxLayout(tab)
+            tab_layout.setContentsMargins(8, 8, 8, 8)
+            tab_layout.setSpacing(8)
+            scroll.setWidget(tab)
+            return scroll, tab_layout
+
+        create_tab, create_layout = make_control_tab()
+        adjust_tab, adjust_layout = make_control_tab()
+
+        self.control_tabs.addTab(create_tab, '作成')
+        self.control_tabs.addTab(adjust_tab, '調整・保存')
+        left_layout.addWidget(self.control_tabs)
+
         # Nano Banana Pro生成（旧2x2ワークフロー。Stack-chan版では非表示）
         generate_group = QGroupBox('Nano Banana Pro生成')
         generate_layout = QVBoxLayout(generate_group)
@@ -408,21 +508,81 @@ class PartsMixerWindow(QMainWindow):
         generate_layout.addWidget(self.lbl_generate_status)
 
         generate_group.setVisible(False)
-        left_layout.addWidget(generate_group)
+        create_layout.addWidget(generate_group)
 
         # Stack-chan用1枚ワークフロー
-        pair_group = QGroupBox('Stack-chan素材生成')
+        pair_group = QGroupBox('表情素材の作成')
+        pair_group.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         pair_layout = QVBoxLayout(pair_group)
 
-        self.btn_pair_base = QPushButton('基準画像を選択...')
+        step_style = 'color: #e5e7eb; font-weight: bold; margin-top: 6px;'
+
+        step1 = QLabel('1. 標準表情')
+        step1.setStyleSheet(step_style)
+        pair_layout.addWidget(step1)
+
+        self.lbl_neutral_base = QLabel('元画像: 未選択')
+        self.lbl_neutral_base.setWordWrap(True)
+        self.lbl_neutral_base.setStyleSheet('color: #888;')
+        pair_layout.addWidget(self.lbl_neutral_base)
+
+        self.btn_select_neutral_base = QPushButton('標準表情の画像を選択...')
+        self.btn_select_neutral_base.setToolTip('他の感情を作る元になる標準表情の画像を選択します')
+        self.btn_select_neutral_base.setStyleSheet('background-color: #0e639c; color: white; min-height: 24px;')
+        self.btn_select_neutral_base.clicked.connect(self._select_neutral_base)
+        pair_layout.addWidget(self.btn_select_neutral_base)
+
+        step2 = QLabel('2. 作成する感情')
+        step2.setStyleSheet(step_style)
+        pair_layout.addWidget(step2)
+
+        emotion_layout = QHBoxLayout()
+        emotion_layout.addWidget(QLabel('感情:'))
+        self.combo_emotion = QComboBox()
+        for label, emotion in [
+            ('標準', 'neutral'),
+            ('喜び', 'happy'),
+            ('悲しみ', 'sad'),
+            ('怒り', 'angry'),
+            ('考え中', 'thinking'),
+        ]:
+            self.combo_emotion.addItem(label, emotion)
+        self.combo_emotion.currentIndexChanged.connect(self._on_emotion_changed)
+        emotion_layout.addWidget(self.combo_emotion)
+        pair_layout.addLayout(emotion_layout)
+
+        self.btn_generate_emotion_base = QPushButton('この感情の画像を生成...')
+        self.btn_generate_emotion_base.setToolTip('標準表情の画像から、選択中の感情の画像を生成します')
+        self.btn_generate_emotion_base.setStyleSheet('background-color: #0e639c; color: white; min-height: 24px;')
+        self.btn_generate_emotion_base.clicked.connect(self._generate_emotion_base)
+        self.btn_generate_emotion_base.setEnabled(False)
+        pair_layout.addWidget(self.btn_generate_emotion_base)
+        self.btn_generate_emotion_base.setVisible(False)
+
+        self.lbl_or_emotion_base = QLabel('または')
+        self.lbl_or_emotion_base.setAlignment(Qt.AlignCenter)
+        self.lbl_or_emotion_base.setStyleSheet('color: #9ca3af;')
+        pair_layout.addWidget(self.lbl_or_emotion_base)
+        self.lbl_or_emotion_base.setVisible(False)
+
+        self.btn_pair_base = QPushButton('この感情の画像を選択...')
         self.btn_pair_base.setToolTip('Stack-chanに表示する基準表情画像を選択します')
         self.btn_pair_base.setStyleSheet('background-color: #0e639c; color: white; min-height: 24px;')
         self.btn_pair_base.clicked.connect(self._select_pair_base)
         pair_layout.addWidget(self.btn_pair_base)
 
-        self.lbl_pair_base = QLabel('基準: 未選択')
+        self.lbl_pair_base = QLabel('感情画像: 未選択')
+        self.lbl_pair_base.setWordWrap(True)
         self.lbl_pair_base.setStyleSheet('color: #888;')
         pair_layout.addWidget(self.lbl_pair_base)
+
+        self.lbl_pair_base_preview = QLabel('プレビューなし')
+        self.lbl_pair_base_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_pair_base_preview.setMinimumHeight(90)
+        self.lbl_pair_base_preview.setStyleSheet(
+            'background-color: #1e1e1e; border: 1px solid #3e3e42; color: #888; padding: 6px;'
+        )
+        pair_layout.addWidget(self.lbl_pair_base_preview)
 
         state_layout = QHBoxLayout()
         state_layout.addWidget(QLabel('基準の目:'))
@@ -439,6 +599,10 @@ class PartsMixerWindow(QMainWindow):
         state_layout.addWidget(self.combo_base_mouth_state)
         pair_layout.addLayout(state_layout)
 
+        step3 = QLabel('3. 目と口の反対状態')
+        step3.setStyleSheet(step_style)
+        pair_layout.addWidget(step3)
+
         self.btn_pair_variant = QPushButton('変化画像を選択...')
         self.btn_pair_variant.setToolTip('基準画像と目/口が反対の画像を手動で選択します')
         self.btn_pair_variant.setStyleSheet('background-color: #0e639c; color: white; min-height: 24px;')
@@ -446,12 +610,18 @@ class PartsMixerWindow(QMainWindow):
         pair_layout.addWidget(self.btn_pair_variant)
 
         self.lbl_pair_variant = QLabel('変化: 未選択')
+        self.lbl_pair_variant.setWordWrap(True)
         self.lbl_pair_variant.setStyleSheet('color: #888;')
         pair_layout.addWidget(self.lbl_pair_variant)
 
-        model_layout = QHBoxLayout()
-        model_layout.addWidget(QLabel('画像生成モデル:'))
+        model_layout = QVBoxLayout()
+        model_label = QLabel('画像生成モデル:')
+        model_label.setWordWrap(True)
+        model_layout.addWidget(model_label)
         self.combo_image_model = QComboBox()
+        self.combo_image_model.setMinimumContentsLength(8)
+        self.combo_image_model.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_image_model.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.combo_image_model.addItem('Gemini Nano Banana Pro（高品質）', ('gemini', DEFAULT_MODEL))
         self.combo_image_model.addItem('Gemini Nano Banana 2（Preview）', ('gemini', 'gemini-3.1-flash-image-preview'))
         self.combo_image_model.addItem('Gemini Nano Banana（高速）', ('gemini', 'gemini-2.5-flash-image'))
@@ -460,10 +630,12 @@ class PartsMixerWindow(QMainWindow):
         model_layout.addWidget(self.combo_image_model)
         pair_layout.addLayout(model_layout)
 
-        api_layout = QHBoxLayout()
+        api_layout = QVBoxLayout()
         self.lbl_gemini_api_key = QLabel('Gemini APIキー:')
+        self.lbl_gemini_api_key.setWordWrap(True)
         api_layout.addWidget(self.lbl_gemini_api_key)
         self.edit_api_key = QLineEdit()
+        self.edit_api_key.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.edit_api_key.setEchoMode(QLineEdit.Password)
         self.edit_api_key.setPlaceholderText('未入力なら環境変数 GEMINI_API_KEY を使用')
         self.edit_api_key.setText(os.environ.get('GEMINI_API_KEY', ''))
@@ -471,10 +643,12 @@ class PartsMixerWindow(QMainWindow):
         api_layout.addWidget(self.edit_api_key)
         pair_layout.addLayout(api_layout)
 
-        openai_api_layout = QHBoxLayout()
+        openai_api_layout = QVBoxLayout()
         self.lbl_openai_api_key = QLabel('OpenAI APIキー:')
+        self.lbl_openai_api_key.setWordWrap(True)
         openai_api_layout.addWidget(self.lbl_openai_api_key)
         self.edit_openai_api_key = QLineEdit()
+        self.edit_openai_api_key.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.edit_openai_api_key.setEchoMode(QLineEdit.Password)
         self.edit_openai_api_key.setPlaceholderText('未入力なら環境変数 OPENAI_API_KEY を使用')
         self.edit_openai_api_key.setText(os.environ.get('OPENAI_API_KEY', ''))
@@ -483,6 +657,11 @@ class PartsMixerWindow(QMainWindow):
         pair_layout.addLayout(openai_api_layout)
         self.lbl_openai_api_key.setVisible(False)
         self.edit_openai_api_key.setVisible(False)
+
+        self.lbl_generate_status = QLabel('生成状態: 待機中')
+        self.lbl_generate_status.setWordWrap(True)
+        self.lbl_generate_status.setStyleSheet('color: #888;')
+        pair_layout.addWidget(self.lbl_generate_status)
 
         self.btn_generate_variant = QPushButton('反対状態の画像を生成...')
         self.btn_generate_variant.setToolTip('選択した画像生成モデルで、基準画像と目/口が反対の画像を生成します')
@@ -496,7 +675,10 @@ class PartsMixerWindow(QMainWindow):
         self.btn_setup_pair.setEnabled(False)
         pair_layout.addWidget(self.btn_setup_pair)
 
-        left_layout.addWidget(pair_group)
+        self._update_emotion_controls()
+
+        create_layout.addWidget(pair_group)
+        create_layout.addStretch()
 
         # 分割サイズ選択
         grid_group = QGroupBox('分割サイズ')
@@ -509,7 +691,7 @@ class PartsMixerWindow(QMainWindow):
         self.combo_grid.currentIndexChanged.connect(self._on_grid_changed)
         grid_layout.addWidget(self.combo_grid)
         grid_group.setVisible(False)
-        left_layout.addWidget(grid_group)
+        adjust_layout.addWidget(grid_group)
 
         # 画像入力
         drop_group = QGroupBox('画像入力')
@@ -537,7 +719,7 @@ class PartsMixerWindow(QMainWindow):
         drop_layout.addWidget(self.btn_process)
 
         drop_group.setVisible(False)
-        left_layout.addWidget(drop_group)
+        adjust_layout.addWidget(drop_group)
 
         # 画像選択
         select_group = QGroupBox('画像選択')
@@ -574,7 +756,7 @@ class PartsMixerWindow(QMainWindow):
         select_layout.addWidget(self.btn_auto_select)
 
         select_group.setVisible(False)
-        left_layout.addWidget(select_group)
+        adjust_layout.addWidget(select_group)
 
         # ブラシ設定
         brush_group = QGroupBox('ブラシ')
@@ -614,10 +796,14 @@ class PartsMixerWindow(QMainWindow):
 
         self.radio_add.toggled.connect(self._on_mode_toggled)
 
-        self.check_color_match = QCheckBox('生成画像の色を基準画像に合わせる')
+        self.check_color_match = QCheckBox('生成画像の色を合わせる')
         self.check_color_match.setChecked(True)
-        self.check_color_match.setToolTip('AI生成で肌や髪の色が少し変わった場合に、変化画像を基準画像の色味へ寄せます')
+        self.check_color_match.setToolTip('AI生成で肌や髪の色が少し変わった場合に、感情画像や変化画像を標準画像の色味へ寄せます')
         brush_layout.addWidget(self.check_color_match)
+        color_match_help = QLabel('AI生成で肌や髪の色が変わった場合に、標準画像の色味へ寄せます。')
+        color_match_help.setWordWrap(True)
+        color_match_help.setStyleSheet('color: #9ca3af; font-size: 11px;')
+        brush_layout.addWidget(color_match_help)
 
         # Undo/Redo
         undo_layout = QHBoxLayout()
@@ -632,7 +818,7 @@ class PartsMixerWindow(QMainWindow):
         undo_layout.addWidget(self.btn_redo)
         brush_layout.addLayout(undo_layout)
 
-        left_layout.addWidget(brush_group)
+        adjust_layout.addWidget(brush_group)
 
         # フェザー
         feather_group = QGroupBox('フェザー')
@@ -651,7 +837,7 @@ class PartsMixerWindow(QMainWindow):
         self.lbl_feather_value = QLabel('10px')
         feather_slider_layout.addWidget(self.lbl_feather_value)
         feather_layout.addLayout(feather_slider_layout)
-        left_layout.addWidget(feather_group)
+        adjust_layout.addWidget(feather_group)
 
         # 保存
         save_group = QGroupBox('保存')
@@ -662,13 +848,14 @@ class PartsMixerWindow(QMainWindow):
         save_layout.addWidget(self.check_resize_cores3)
 
         self.btn_save = QPushButton('4パターン一括保存...')
-        self.btn_save.setStyleSheet('background-color: #16a34a; color: white;')
+        self.btn_save.setMinimumHeight(52)
+        self.btn_save.setStyleSheet('background-color: #16a34a; color: white; font-weight: bold; font-size: 14px;')
         self.btn_save.clicked.connect(self._save_all)
         self.btn_save.setEnabled(False)
         save_layout.addWidget(self.btn_save)
-        left_layout.addWidget(save_group)
+        adjust_layout.addWidget(save_group)
+        adjust_layout.addStretch()
 
-        left_layout.addStretch()
         splitter.addWidget(left_panel)
 
         # === 中央パネル（マスクキャンバス） ===
@@ -900,15 +1087,67 @@ class PartsMixerWindow(QMainWindow):
 
     def _select_pair_base(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, '基準画像を選択', '',
+            self, 'この感情の画像を選択', '',
             '画像 (*.png *.jpg *.jpeg *.bmp *.webp)'
         )
         if not path:
             return
         self.pair_base_path = path
-        self.lbl_pair_base.setText(f'基準: {Path(path).name}')
+        if self.current_emotion == 'neutral':
+            self.neutral_base_path = path
+            self.lbl_neutral_base.setText(f'元画像: {Path(path).name}')
+            self.lbl_neutral_base.setStyleSheet('color: #4ade80;')
+        self.lbl_pair_base.setText(f'感情画像: {Path(path).name}')
         self.lbl_pair_base.setStyleSheet('color: #4ade80;')
+        self._update_pair_base_preview(path)
         self._update_pair_setup_state()
+        self._update_emotion_controls()
+
+    def _select_neutral_base(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, '標準表情の画像を選択', '',
+            '画像 (*.png *.jpg *.jpeg *.bmp *.webp)'
+        )
+        if not path:
+            return
+        self.neutral_base_path = path
+        if self.current_emotion == 'neutral':
+            self.pair_base_path = path
+            self.lbl_pair_base.setText(f'感情画像: {Path(path).name}')
+            self.lbl_pair_base.setStyleSheet('color: #4ade80;')
+            self._update_pair_base_preview(path)
+            self._update_pair_setup_state()
+        self.lbl_neutral_base.setText(f'元画像: {Path(path).name}')
+        self.lbl_neutral_base.setStyleSheet('color: #4ade80;')
+        self._update_emotion_controls()
+
+    def _update_pair_base_preview(self, path: str = '', image: Optional[np.ndarray] = None):
+        """選択中の感情画像を小さくプレビューする"""
+        if image is None and path:
+            try:
+                image = load_image_as_bgra(path)
+            except Exception:
+                image = None
+
+        if image is None:
+            self.lbl_pair_base_preview.setText('プレビューなし')
+            self.lbl_pair_base_preview.setPixmap(QPixmap())
+            self.lbl_pair_base_preview.setStyleSheet(
+                'background-color: #1e1e1e; border: 1px solid #3e3e42; color: #888; padding: 6px;'
+            )
+            return
+
+        h, w = image.shape[:2]
+        max_w = max(160, self.lbl_pair_base_preview.width() - 14)
+        max_h = 110
+        scale = min(max_w / w, max_h / h, 1.0)
+        preview = cv2.resize(image, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+        pixmap = QPixmap.fromImage(bgra_to_qimage(preview))
+        self.lbl_pair_base_preview.setText('')
+        self.lbl_pair_base_preview.setPixmap(pixmap)
+        self.lbl_pair_base_preview.setStyleSheet(
+            'background-color: #1e1e1e; border: 1px solid #4ade80; padding: 6px;'
+        )
 
     def _select_pair_variant(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -924,6 +1163,138 @@ class PartsMixerWindow(QMainWindow):
 
     def _update_pair_setup_state(self):
         self.btn_setup_pair.setEnabled(bool(self.pair_base_path and self.pair_variant_path))
+
+    def _on_emotion_changed(self):
+        self.current_emotion = self.combo_emotion.currentData() or 'neutral'
+        self._update_emotion_controls()
+
+    def _update_emotion_controls(self):
+        is_neutral = self.current_emotion == 'neutral'
+        emotion_busy = self.gemini_emotion_worker is not None and self.gemini_emotion_worker.isRunning()
+        self.btn_select_neutral_base.setVisible(True)
+        self.btn_pair_base.setVisible(not is_neutral)
+        self.btn_generate_emotion_base.setVisible(not is_neutral)
+        self.lbl_or_emotion_base.setVisible(not is_neutral)
+        self.btn_generate_emotion_base.setEnabled((not is_neutral) and bool(self.neutral_base_path or self.pair_base_path) and not emotion_busy)
+        self.btn_select_neutral_base.setEnabled(not emotion_busy)
+        self.btn_pair_base.setEnabled(not emotion_busy)
+        self.combo_emotion.setEnabled(not emotion_busy)
+        if is_neutral:
+            self.lbl_pair_base.setText('感情画像: 未選択' if not self.pair_base_path else f'感情画像: {Path(self.pair_base_path).name}')
+            self.lbl_pair_base.setVisible(False)
+        elif self.neutral_base_path:
+            self.lbl_pair_base.setVisible(True)
+            self.lbl_neutral_base.setText(f'元画像: {Path(self.neutral_base_path).name}')
+            self.lbl_neutral_base.setStyleSheet('color: #4ade80;')
+        else:
+            self.lbl_pair_base.setVisible(True)
+            self.lbl_neutral_base.setText('元画像: 未選択')
+            self.lbl_neutral_base.setStyleSheet('color: #fbbf24;')
+
+    def _generate_emotion_base(self):
+        if self.current_emotion == 'neutral':
+            QMessageBox.information(self, '情報', '標準は他の感情を作る元画像です。')
+            return
+        if self.gemini_emotion_worker is not None and self.gemini_emotion_worker.isRunning():
+            QMessageBox.warning(self, '警告', '感情画像を生成中です。')
+            return
+
+        source_path = self.neutral_base_path or self.pair_base_path
+        if not source_path:
+            QMessageBox.warning(self, '警告', '先に標準表情の画像を選択してください。')
+            return
+
+        provider, model = self.combo_image_model.currentData()
+        if provider != 'gemini':
+            QMessageBox.warning(self, '未対応', '感情ベース生成は現在Gemini系モデルのみ対応しています。')
+            return
+
+        api_key = self._get_api_key()
+        if not api_key:
+            QMessageBox.warning(
+                self,
+                'APIキー未設定',
+                '感情ベース生成にはGemini APIキーが必要です。'
+            )
+            return
+
+        source = Path(source_path)
+        output_path = source.with_name(f'{source.stem}_{self.current_emotion}_base.png')
+        if output_path.exists():
+            reply = QMessageBox.question(
+                self, '確認',
+                f'生成先ファイルが既に存在します:\n{output_path}\n\n上書きしますか？',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        self.progress = QProgressDialog('感情画像を生成中...', 'キャンセル', 0, 0, self)
+        self.progress.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress.setMinimumDuration(0)
+        self.progress.setValue(0)
+
+        self.gemini_emotion_worker = GeminiEmotionWorker(
+            source_path=str(source),
+            output_path=str(output_path),
+            api_key=api_key,
+            model=model,
+            image_size=self.combo_gemini_size.currentData(),
+            emotion=self.current_emotion,
+        )
+        self.gemini_emotion_worker.progress.connect(self._on_generate_progress)
+        self.gemini_emotion_worker.finished.connect(self._on_emotion_base_generated)
+        self.gemini_emotion_worker.error.connect(self._on_emotion_generate_error)
+        self.gemini_emotion_worker.start()
+
+        self.progress.canceled.connect(self._on_emotion_generate_cancel)
+        self.lbl_generate_status.setText(f'{self.combo_emotion.currentText()}の画像を生成中...')
+        self.lbl_generate_status.setStyleSheet('color: #60a5fa;')
+        self._update_emotion_controls()
+
+    def _on_emotion_base_generated(self, output_path: str, source_path: str):
+        if hasattr(self, 'progress'):
+            self.progress.close()
+        self.gemini_emotion_worker = None
+
+        try:
+            generated = load_image_as_bgra(output_path)
+            if self.check_color_match.isChecked():
+                reference = load_image_as_bgra(source_path)
+                generated = self._match_generated_color_to_reference(reference, generated)
+                if not save_image(output_path, generated):
+                    raise GeminiImageGenerationError('生成画像の保存に失敗しました')
+        except Exception as e:
+            self._on_emotion_generate_error(str(e))
+            return
+
+        self.pair_base_path = output_path
+        self.pair_variant_path = ''
+        self.lbl_pair_base.setText(f'感情画像: {Path(output_path).name}')
+        self.lbl_pair_base.setStyleSheet('color: #4ade80;')
+        self.lbl_pair_variant.setText('変化: 未選択')
+        self.lbl_pair_variant.setStyleSheet('color: #888;')
+        self._update_pair_base_preview(image=generated)
+        self._update_pair_setup_state()
+        self.lbl_generate_status.setText(f'{self.combo_emotion.currentText()}の画像生成完了')
+        self.lbl_generate_status.setStyleSheet('color: #4ade80;')
+        self._update_emotion_controls()
+
+    def _on_emotion_generate_error(self, message: str):
+        if hasattr(self, 'progress'):
+            self.progress.close()
+        self.gemini_emotion_worker = None
+        self.lbl_generate_status.setText('感情画像の生成に失敗')
+        self.lbl_generate_status.setStyleSheet('color: #f87171;')
+        self._update_emotion_controls()
+        QMessageBox.warning(self, '生成エラー', message)
+
+    def _on_emotion_generate_cancel(self):
+        if self.gemini_emotion_worker:
+            self.gemini_emotion_worker.requestInterruption()
+        self.lbl_generate_status.setText('キャンセル待機中...')
+        self.lbl_generate_status.setStyleSheet('color: #fbbf24;')
 
     def _on_base_state_changed(self):
         self.base_eye_on = bool(self.combo_base_eye_state.currentData())
@@ -1043,6 +1414,9 @@ class PartsMixerWindow(QMainWindow):
             QMessageBox.warning(self, 'エラー', f'画像の読み込みに失敗しました: {e}')
             return
 
+        if self.check_color_match.isChecked():
+            base = self._match_base_color_to_neutral_if_needed(base)
+
         base_size = (base.shape[1], base.shape[0])
         if variant.shape[:2] != base.shape[:2]:
             variant = cv2.resize(variant, base_size, interpolation=cv2.INTER_LINEAR)
@@ -1114,48 +1488,89 @@ class PartsMixerWindow(QMainWindow):
 
     def _match_variant_color_to_base(self, base: np.ndarray, variant: np.ndarray) -> np.ndarray:
         """生成画像の全体的な色味を基準画像へ寄せる"""
-        if base is None or variant is None:
-            return variant
+        return self._match_generated_color_to_reference(base, variant)
 
-        base_bgr = self._to_bgr_for_diff(base).astype(np.float32)
-        variant_bgr = self._to_bgr_for_diff(variant).astype(np.float32)
+    def _match_generated_color_to_reference(self, reference: np.ndarray, generated: np.ndarray) -> np.ndarray:
+        """生成画像の色味を参照画像へ寄せる"""
+        if reference is None or generated is None:
+            return generated
 
-        if base_bgr.shape[:2] != variant_bgr.shape[:2]:
-            variant_bgr = cv2.resize(variant_bgr, (base_bgr.shape[1], base_bgr.shape[0]))
+        reference_bgr = self._to_bgr_for_diff(reference).astype(np.uint8)
+        generated_bgr = self._to_bgr_for_diff(generated).astype(np.uint8)
 
-        sample_mask = self._build_color_match_sample_mask(base_bgr, variant_bgr)
-        corrected = variant_bgr.copy()
+        if reference_bgr.shape[:2] != generated_bgr.shape[:2]:
+            generated_bgr = cv2.resize(generated_bgr, (reference_bgr.shape[1], reference_bgr.shape[0]))
 
-        for channel in range(3):
-            base_values = base_bgr[:, :, channel][sample_mask]
-            variant_values = variant_bgr[:, :, channel][sample_mask]
-            if base_values.size < 100:
-                continue
+        sample_mask = self._build_color_match_sample_mask(reference_bgr, generated_bgr)
+        if int(sample_mask.sum()) < 100:
+            sample_mask = self._build_stable_color_sample_mask(reference_bgr.shape[:2])
 
-            base_mean = float(base_values.mean())
-            variant_mean = float(variant_values.mean())
-            base_std = float(base_values.std())
-            variant_std = float(variant_values.std())
+        corrected = self._apply_bgr_color_transfer(reference_bgr, generated_bgr, sample_mask)
 
-            if variant_std < 1.0:
-                gain = 1.0
-            else:
-                gain = base_std / variant_std
-            # 強すぎる補正は目や口の色を壊すため、穏やかに制限する。
-            gain = max(0.85, min(1.15, gain))
-            offset = max(-18.0, min(18.0, base_mean - variant_mean * gain))
-            corrected[:, :, channel] = corrected[:, :, channel] * gain + offset
-
-        corrected = np.clip(corrected, 0, 255).astype(np.uint8)
-
-        result = variant.copy()
+        result = generated.copy()
         if result.ndim == 2:
             return cv2.cvtColor(corrected, cv2.COLOR_BGR2GRAY)
+        if result.shape[:2] != corrected.shape[:2]:
+            result = cv2.resize(result, (corrected.shape[1], corrected.shape[0]), interpolation=cv2.INTER_AREA)
         if result.shape[2] == 4:
             result[:, :, :3] = corrected
             return result
         result[:, :, :3] = corrected
         return result
+
+    def _match_base_color_to_neutral_if_needed(self, base: np.ndarray) -> np.ndarray:
+        """感情用の基準画像を標準表情の色へ寄せる"""
+        if self.current_emotion == 'neutral' or not self.neutral_base_path:
+            return base
+
+        try:
+            reference = load_image_as_bgra(self.neutral_base_path)
+        except Exception:
+            return base
+
+        if reference.shape[:2] != base.shape[:2]:
+            reference = cv2.resize(reference, (base.shape[1], base.shape[0]), interpolation=cv2.INTER_AREA)
+
+        return self._match_generated_color_to_reference(reference, base)
+
+    def _apply_bgr_color_transfer(
+        self,
+        reference_bgr: np.ndarray,
+        generated_bgr: np.ndarray,
+        sample_mask: np.ndarray
+    ) -> np.ndarray:
+        """安定領域のBGR平均と分散を使って色差を補正する"""
+        reference_float = reference_bgr.astype(np.float32)
+        generated_float = generated_bgr.astype(np.float32)
+        corrected = generated_float.copy()
+
+        for channel in range(3):
+            reference_values = reference_float[:, :, channel][sample_mask]
+            generated_values = generated_float[:, :, channel][sample_mask]
+            if reference_values.size < 100:
+                continue
+
+            reference_mean = float(reference_values.mean())
+            generated_mean = float(generated_values.mean())
+            reference_std = float(reference_values.std())
+            generated_std = float(generated_values.std())
+
+            gain = 1.0 if generated_std < 1.0 else reference_std / generated_std
+            gain = max(0.85, min(1.15, gain))
+            offset = reference_mean - generated_mean * gain
+            offset = max(-18.0, min(18.0, offset))
+            corrected[:, :, channel] = corrected[:, :, channel] * gain + offset
+
+        return np.clip(corrected, 0, 255).astype(np.uint8)
+
+    def _build_stable_color_sample_mask(self, shape: tuple) -> np.ndarray:
+        """目と口を避けた固定領域を色補正サンプルにする"""
+        h, w = shape
+        mask = np.ones((h, w), dtype=bool)
+        mask[int(h * 0.12): int(h * 0.68), int(w * 0.03): int(w * 0.47)] = False
+        mask[int(h * 0.12): int(h * 0.68), int(w * 0.53): int(w * 0.97)] = False
+        mask[int(h * 0.54): int(h * 0.95), int(w * 0.26): int(w * 0.74)] = False
+        return mask
 
     def _build_color_match_sample_mask(self, base_bgr: np.ndarray, variant_bgr: np.ndarray) -> np.ndarray:
         """目口など大きく変わった部分を避けて色補正用サンプル領域を作る"""
@@ -1182,9 +1597,15 @@ class PartsMixerWindow(QMainWindow):
         if urls:
             path = urls[0].toLocalFile()
             self.pair_base_path = path
-            self.lbl_pair_base.setText(f'基準: {Path(path).name}')
+            if self.current_emotion == 'neutral':
+                self.neutral_base_path = path
+                self.lbl_neutral_base.setText(f'元画像: {Path(path).name}')
+                self.lbl_neutral_base.setStyleSheet('color: #4ade80;')
+            self.lbl_pair_base.setText(f'感情画像: {Path(path).name}')
             self.lbl_pair_base.setStyleSheet('color: #4ade80;')
+            self._update_pair_base_preview(path)
             self._update_pair_setup_state()
+            self._update_emotion_controls()
 
     def _select_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -1193,9 +1614,15 @@ class PartsMixerWindow(QMainWindow):
         )
         if path:
             self.pair_base_path = path
-            self.lbl_pair_base.setText(f'基準: {Path(path).name}')
+            if self.current_emotion == 'neutral':
+                self.neutral_base_path = path
+                self.lbl_neutral_base.setText(f'元画像: {Path(path).name}')
+                self.lbl_neutral_base.setStyleSheet('color: #4ade80;')
+            self.lbl_pair_base.setText(f'感情画像: {Path(path).name}')
             self.lbl_pair_base.setStyleSheet('color: #4ade80;')
+            self._update_pair_base_preview(path)
             self._update_pair_setup_state()
+            self._update_emotion_controls()
 
     def _load_image(self, path: str):
         if self.worker is not None and self.worker.isRunning():
@@ -1940,13 +2367,14 @@ class PartsMixerWindow(QMainWindow):
 
         output_path = Path(output_dir)
         base_name = Path(self.source_path).stem if self.source_path else 'output'
+        emotion_prefix = self.current_emotion or 'neutral'
 
         # 既存ファイルチェック
         names = [
-            f'{base_name}_eyeOFF_mouthOFF.png',
-            f'{base_name}_eyeON_mouthOFF.png',
-            f'{base_name}_eyeOFF_mouthON.png',
-            f'{base_name}_eyeON_mouthON.png'
+            f'{emotion_prefix}_{base_name}_eyeOFF_mouthOFF.png',
+            f'{emotion_prefix}_{base_name}_eyeON_mouthOFF.png',
+            f'{emotion_prefix}_{base_name}_eyeOFF_mouthON.png',
+            f'{emotion_prefix}_{base_name}_eyeON_mouthON.png'
         ]
 
         existing = [n for n in names if (output_path / n).exists()]

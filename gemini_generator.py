@@ -73,6 +73,34 @@ Only change these parts:
 The result must keep the exact same composition as the input image. Make the changed eye and mouth regions clean and easy to mask for Stack-chan display assets."""
 
 
+def build_emotion_prompt(emotion: str) -> str:
+    """Prompt for generating an emotion base image from neutral."""
+    descriptions = {
+        "neutral": "a calm neutral expression",
+        "happy": "a clearly happy expression with gentle cheerful eyes and a friendly smile",
+        "sad": "a sad expression with slightly lowered brows and a subdued mouth",
+        "angry": "an angry expression with sharper eyes, lowered brows, and a displeased mouth",
+        "thinking": "a thinking expression with a thoughtful gaze, slightly raised or tilted brows, and a small contemplative mouth",
+    }
+    description = descriptions.get(emotion, descriptions["neutral"])
+
+    return f"""Edit the provided Stack-chan / PNGTuber character image.
+
+Output a single image, not a grid.
+
+Create the emotion base image for: {emotion}.
+Expression target: {description}.
+
+Keep completely unchanged:
+- character identity and art style
+- face angle, head tilt, face outline, hair, body, clothes, background
+- camera framing, position, scale, lighting, colors, and line weight
+
+Only change the face expression, primarily eyebrows, eyes, eyelids, and mouth. Keep the expression suitable for small 320x240 Stack-chan display assets.
+
+The result must keep the exact same composition as the input image."""
+
+
 def generate_expression_sheet(
     api_key: str,
     image_path: str,
@@ -180,6 +208,26 @@ def generate_counterpart_image(
         api_key=api_key,
         image_path=image_path,
         prompt=prompt or build_counterpart_prompt(base_eye_on, base_mouth_on),
+        model=model,
+        image_size=image_size,
+        timeout=timeout,
+    )
+
+
+def generate_emotion_image(
+    api_key: str,
+    image_path: str,
+    emotion: str,
+    prompt: Optional[str] = None,
+    model: str = DEFAULT_MODEL,
+    image_size: str = "1K",
+    timeout: int = 180,
+) -> GeminiImageResult:
+    """Generate an emotion base image from a neutral/base image."""
+    return generate_expression_sheet(
+        api_key=api_key,
+        image_path=image_path,
+        prompt=prompt or build_emotion_prompt(emotion),
         model=model,
         image_size=image_size,
         timeout=timeout,
