@@ -1,50 +1,14 @@
-expression_sheet:
-  task: "edit_reference_image"
-  format:
-    grid: "2x2"
-    preserve: "exact_pixel_position"
-  
-  critical_rule:
-    source: "use provided reference image as base"
-    maintain:
-      - original_art_style
-      - original_character_design
-      - original_face_angle
-      - original_head_tilt
-      - original_color_palette
-      - original_lighting
-      - original_line_weight
-    do_not_change:
-      - head_position
-      - face_outline
-      - hair
-      - background
-      - overall_composition
+Edit the provided Stack-chan / PNGTuber character image.
 
-  editable_elements:
-    - eyelids_only
-    - mouth_only
-  
-  parts_definition:
-    eyes:
-      open: "natural relaxed open state"
-      closed: "gentle blink, relaxed eyelids"
-    mouth:
-      closed: "lips together, neutral"
-      open: "natural speaking, showing inside"
-  
-  panels:
-    top_left:
-      action: "keep_unchanged"
-    
-    top_right:
-      eyes: "open"
-      mouth: "open"
-    
-    bottom_left:
-      eyes: "closed"
-      mouth: "closed"
-    
-    bottom_right:
-      eyes: "closed"
-      mouth: "open"
+Output a single image, not a grid.
+
+Keep completely unchanged:
+- character identity and art style
+- face angle, head tilt, face outline, hair, body, clothes, background
+- camera framing, position, scale, lighting, colors, and line weight
+
+Only change these parts:
+- eyes: change the current eye state to the opposite state
+- mouth: change the current mouth state to the opposite state
+
+The result must keep the exact same composition as the input image. Make the changed eye and mouth regions clean and easy to mask for Stack-chan display assets.

@@ -1,11 +1,9 @@
-# Easy PNGTuber
+# Stack-chan Face Maker
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 
-PNGTuber用の表情差分画像を簡単に作成するツールです。
-
-📝 [使い方の解説記事（note）](https://note.com/rotejin/n/n106abaaa3957)
+Stack-chan / Stack CoreS3向けの表情差分画像を簡単に作成するツールです。
 
 [English](README_EN.md)
 
@@ -13,8 +11,10 @@ PNGTuber用の表情差分画像を簡単に作成するツールです。
 
 ## 特徴
 
-- 目と口を別々のソースから選んで4パターン自動生成
-- 2x2 表情シートから分割＆位置合わせ
+- 1枚の基準画像からNano Banana Pro（Gemini API）で反対状態の画像を生成
+- 基準画像と変化画像の2枚から、目ON/OFF × 口ON/OFFの4パターンを生成
+- Stack CoreS3 / M5Stack CoreS3向けに320x240で保存
+- 差分ベースの初期マスク生成
 - AKAZE / ORB 特徴点マッチングによる高精度位置合わせ
 - オーバーレイ表示で差分確認しながらマスク描画
 - 日本語ファイルパス対応
@@ -23,8 +23,6 @@ PNGTuber用の表情差分画像を簡単に作成するツールです。
 ---
 
 ## クイックスタート
-
-まず **表情差分シート**（2x2の表情バリエーション画像）を用意する必要があります（[Step 2](#step-2-表情差分シートの作成) 参照）。
 
 ### Step 1: ツールのインストール
 
@@ -39,107 +37,35 @@ uv sync
 
 > [uv](https://docs.astral.sh/uv/) がインストールされていない場合: `pip install uv` または [公式サイト](https://docs.astral.sh/uv/getting-started/installation/) 参照
 
-### Step 2: 表情差分シートの作成
+### Step 2: Stack-chan表情素材の作成
 
-1. **キャラクター画像を用意**
-   - PNGTuberにしたいキャラクターの画像（1枚）を用意します
-
-2. **Grid Tilerで2x2画像を作成**
+1. **アプリを起動**
    ```bash
-   uv run python grid_tiler.py
+   uv run python parts_mixer.py
    ```
-   - 用意した画像をドラッグ＆ドロップ
-   - 「タイリング画像を保存」で2x2画像を出力
-
-3. **AIで表情差分を生成**
-   - [Google AI Studio](https://aistudio.google.com/) の画像生成AI（Nano Banana）を使用
-   - 2x2画像をアップロードし、以下のプロンプトで表情差分を生成:
-
-   <details>
-   <summary>プロンプトを表示（クリックで展開）</summary>
-
-   ```yaml
-   expression_sheet:
-     task: "edit_reference_image"
-     format:
-       grid: "2x2"
-       preserve: "exact_pixel_position"
-
-     critical_rule:
-       source: "use provided reference image as base"
-       maintain:
-         - original_art_style
-         - original_character_design
-         - original_face_angle
-         - original_head_tilt
-         - original_color_palette
-         - original_lighting
-         - original_line_weight
-       do_not_change:
-         - head_position
-         - face_outline
-         - hair
-         - background
-         - overall_composition
-
-     editable_elements:
-       - eyelids_only
-       - mouth_only
-
-     parts_definition:
-       eyes:
-         open: "natural relaxed open state"
-         closed: "gentle blink, relaxed eyelids"
-       mouth:
-         closed: "lips together, neutral"
-         open: "natural speaking, showing inside"
-
-     panels:
-       top_left:
-         action: "keep_unchanged"
-
-       top_right:
-         eyes: "open"
-         mouth: "open"
-
-       bottom_left:
-         eyes: "closed"
-         mouth: "closed"
-
-       bottom_right:
-         eyes: "closed"
-         mouth: "open"
-   ```
-
-   </details>
-
-### Step 3: Parts Mixerで仕上げ
-
-```bash
-uv run python parts_mixer.py
-```
-
-生成された表情差分シートをParts Mixerで読み込み、目と口のパーツを組み合わせてPNGTuber用の4パターンを出力します。
+   - Gemini APIキーは画面の「Gemini APIキー」に入力できます
+   - 未入力の場合は環境変数 `GEMINI_API_KEY` を使用します
+2. **基準画像を選択**
+   - Stack-chanに表示したい基準表情を1枚選びます
+   - 推奨作業サイズは640x480です
+   - 基準画像の目/口状態をUIで指定します
+3. **反対状態の画像を生成**
+   - 「画像生成モデル」でGemini Nano Banana Pro、Gemini Nano Banana 2 Preview、Gemini Nano Banana、OpenAI GPT Image 2を選べます
+   - 選んだモデルのAPIキーを入力して「反対状態の画像を生成...」を押します
+   - 手元に画像がある場合は「変化画像を選択...」でも使えます
+4. **4パターンを作成**
+   - 「4パターンを作成」を押すと、差分マスクとプレビューが生成されます
+   - 必要に応じて目・口マスクを微調整します
+   - フェザーはマスク境界をぼかす設定です。まずは5〜12px程度を推奨します
+5. **保存**
+   - 「CoreS3用 320x240で保存」はデフォルトONです
+   - 「4パターン一括保存」で実機向けPNGを保存します
 
 ---
 
-## Parts Mixerの使い方
+## 出力
 
-目と口のパーツを別々のソース画像から選択し、4パターン（目ON/OFF × 口ON/OFF）を自動生成します。
-
-AI画像生成で表情差分を一括生成した際、一部のパーツが期待通りにならない場合に便利です。
-
-```bash
-uv run python parts_mixer.py
-```
-
-1. 表情シートをドラッグ＆ドロップ
-2. 「分割＆位置合わせ」を実行
-3. ベース画像 / 目ソース / 口ソースをそれぞれ選択（ベースが目閉じ口閉じの場合、目ソースは目開き、口ソースは口開きを選ぶ）
-4. 目キャンバスで目の領域をマスク
-5. 口キャンバスで口の領域をマスク
-6. 4パターンがプレビューに表示
-7. 「4パターン一括保存」で出力
+Stack CoreS3 / M5Stack CoreS3のLCDは320x240です。このアプリでは編集・生成を640x480で行い、保存時に320x240へ縮小する運用を推奨します。
 
 ### 出力ファイル
 
