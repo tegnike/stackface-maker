@@ -38,22 +38,6 @@ def load_image_as_bgra(path: str) -> np.ndarray:
     return img
 
 
-def bgra_to_qimage(bgra: np.ndarray) -> 'QImage':
-    """BGRA→QImage（Format_RGBA8888、ストレートアルファ）
-    
-    Args:
-        bgra: BGRA画像 (uint8)
-        
-    Returns:
-        QImage (RGBA8888形式)
-    """
-    from PySide6.QtGui import QImage
-    
-    rgba = cv2.cvtColor(bgra, cv2.COLOR_BGRA2RGBA)
-    h, w, ch = rgba.shape
-    return QImage(rgba.data, w, h, w * ch, QImage.Format.Format_RGBA8888).copy()
-
-
 def load_image(filepath: str, flags: int = cv2.IMREAD_UNCHANGED) -> Optional[np.ndarray]:
     """
     画像を読み込み
@@ -146,76 +130,6 @@ def resize_image(image: np.ndarray,
     return image
 
 
-def convert_to_qimage(image: np.ndarray) -> 'QImage':
-    """
-    OpenCV画像をPySide6 QImageに変換
-    
-    Args:
-        image: BGRまたはBGRA画像
-    
-    Returns:
-        QImage
-    """
-    from PySide6.QtGui import QImage
-    
-    if len(image.shape) == 2:
-        # グレースケール
-        height, width = image.shape
-        bytes_per_line = width
-        return QImage(image.data, width, height, bytes_per_line, QImage.Format.Format_Grayscale8)
-    
-    height, width, channels = image.shape
-    
-    if channels == 3:
-        # BGR -> RGB
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        bytes_per_line = 3 * width
-        return QImage(rgb_image.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-    
-    elif channels == 4:
-        # BGRA -> RGBA
-        rgba_image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
-        bytes_per_line = 4 * width
-        return QImage(rgba_image.data, width, height, bytes_per_line, QImage.Format.Format_RGBA8888)
-    
-    else:
-        raise ValueError(f"Unsupported channel count: {channels}")
-
-
-def convert_from_qimage(qimage: 'QImage') -> np.ndarray:
-    """
-    PySide6 QImageをOpenCV画像に変換
-    """
-    import numpy as np
-    
-    width = qimage.width()
-    height = qimage.height()
-    
-    ptr = qimage.bits()
-    ptr.setsize(height * width * 4)
-    
-    arr = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))
-    
-    # RGBA -> BGRA
-    return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
-
-
-def create_checkerboard(size: Tuple[int, int], 
-                        checker_size: int = 20,
-                        color1: Tuple[int, int, int] = (200, 200, 200),
-                        color2: Tuple[int, int, int] = (255, 255, 255)) -> np.ndarray:
-    """
-    チェッカーボードパターンを作成（透明背景プレビュー用）
-    """
-    h, w = size
-    result = np.zeros((h, w, 3), dtype=np.uint8)
-    
-    for y in range(0, h, checker_size):
-        for x in range(0, w, checker_size):
-            color = color1 if ((x // checker_size) + (y // checker_size)) % 2 == 0 else color2
-            result[y:y+checker_size, x:x+checker_size] = color
-    
-    return result
 
 
 def composite_images(background: np.ndarray, 
