@@ -1,9 +1,11 @@
-# Stack-chan Face Maker
+# StackFace Maker
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 
-A tool for creating expression assets for Stack-chan / Stack CoreS3.
+A local web app for creating expression assets for Stack-chan / Stack CoreS3.
+
+StackFace Maker is derived from [EasyPNGTuber](https://github.com/rotejin/EasyPNGTuber) and has been substantially redesigned for Stack-chan / Stack CoreS3 face asset creation.
 
 [日本語](README.md)
 
@@ -27,8 +29,8 @@ A tool for creating expression assets for Stack-chan / Stack CoreS3.
 ### Step 1: Install
 
 ```bash
-git clone https://github.com/rotejin/EasyPNGTuber.git
-cd EasyPNGTuber
+git clone https://github.com/tegnike/stackface-maker.git
+cd stackface-maker
 uv sync
 ```
 
@@ -89,3 +91,5 @@ The app creates a `{emotion}_{base}/` folder in the selected output directory an
 ## License
 
 MIT License. See [LICENSE](LICENSE).
+
+This project is derived from EasyPNGTuber. See [NOTICE.md](NOTICE.md) for attribution details.

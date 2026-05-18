@@ -1,7 +1,7 @@
 [project]
-name = "easy-pngtuber"
+name = "stackface-maker"
 version = "1.0.0"
-description = "AI生成画像の位置合わせと差分抽出ツール集"
+description = "Stack-chan / Stack CoreS3 face expression asset maker"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"

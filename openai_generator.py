@@ -97,7 +97,7 @@ def generate_counterpart_image_openai(
 
 def _encode_multipart(fields: dict, files: dict) -> tuple:
     """Encode multipart/form-data without adding a requests dependency."""
-    boundary = f"----EasyPNGTuber{uuid.uuid4().hex}"
+    boundary = f"----StackFaceMaker{uuid.uuid4().hex}"
     chunks = []
 
     for name, value in fields.items():

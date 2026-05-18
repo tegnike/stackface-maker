@@ -396,7 +396,7 @@ class PartsMixerWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Stack-chan Face Maker - CoreS3表情素材生成')
+        self.setWindowTitle('StackFace Maker - CoreS3表情素材生成')
         self.setMinimumSize(1400, 900)
         self.setAcceptDrops(True)
 
@@ -2441,7 +2441,7 @@ class PartsMixerWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName('Stack-chan Face Maker')
+    app.setApplicationName('StackFace Maker')
     app.setStyle('Fusion')
 
     app.setStyleSheet("""

@@ -20,7 +20,7 @@ from web_image_service import WebImageService
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "web_static"
 
-app = FastAPI(title="Stack-chan Face Maker Web")
+app = FastAPI(title="StackFace Maker")
 service = WebImageService()
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
