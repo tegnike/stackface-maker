@@ -19,7 +19,6 @@ StackFace Maker is derived from [EasyPNGTuber](https://github.com/rotejin/EasyPN
 - Auto-generate initial eye and mouth masks from image differences
 - Align the variant image with AKAZE / ORB feature matching
 - Draw and correct masks in a local browser-based web app
-- The previous PySide6 GUI is still available
 - Supports Japanese file paths
 
 ---
@@ -62,17 +61,20 @@ Open `http://127.0.0.1:8765` in your browser.
 4. Adjust eye and mouth masks if needed.
 5. Save all four PNGs. The CoreS3 320x240 output option is enabled by default.
 
-### PySide6 GUI
-
-```bash
-uv run python parts_mixer.py
-```
-
----
-
 ## Output Folder and Files
 
 The app creates a `{emotion}_{base}/` folder in the selected output directory and saves:
+
+- `eyeOFF_mouthOFF.png`
+- `eyeON_mouthOFF.png`
+- `eyeOFF_mouthON.png`
+- `eyeON_mouthON.png`
+
+---
+
+## Sample Images
+
+`sample/standard/` contains a real four-pattern output sample:
 
 - `eyeOFF_mouthOFF.png`
 - `eyeON_mouthOFF.png`
