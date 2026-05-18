@@ -48,13 +48,16 @@ Open `http://127.0.0.1:8765` in your browser.
 
 ### Step 3: Create Stack-chan Face Assets
 
+0. Select a generation model and enter the provider API key.
+   - If left blank, the app uses `GEMINI_API_KEY` / `OPENAI_API_KEY`.
 1. Select a standard/base face image.
    - 640x480 is recommended for editing.
    - Set the base eye and mouth state in the UI.
+   - Choose a preset emotion, or enter a temporary custom emotion label such as "surprised" or "sleepy".
+   - Use the emotion prompt field for extra instructions when generating the emotion base image.
 2. Generate or select the opposite-state variant image.
    - Available generation models include Gemini Nano Banana Pro, Gemini Nano Banana 2 Preview, Gemini Nano Banana, and OpenAI GPT Image 2.
-   - Enter the API key for the selected provider, or use `GEMINI_API_KEY` / `OPENAI_API_KEY`.
-   - Use the additional prompt field for extra instructions such as preserving hair, reducing blush, or adjusting mouth size. It is applied to both emotion and opposite-state generation.
+   - Use the opposite-state prompt field for extra instructions such as preserving hair, reducing blush, or adjusting mouth size.
 3. Click "Create 4 Patterns".
 4. Adjust eye and mouth masks if needed.
 5. Save all four PNGs. The CoreS3 320x240 output option is enabled by default.

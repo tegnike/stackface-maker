@@ -73,7 +73,7 @@ Only change these parts:
 The result must keep the exact same composition as the input image. Make the changed eye and mouth regions clean and easy to mask for Stack-chan display assets."""
 
 
-def build_emotion_prompt(emotion: str) -> str:
+def build_emotion_prompt(emotion: str, emotion_label: Optional[str] = None) -> str:
     """Prompt for generating an emotion base image from neutral."""
     descriptions = {
         "neutral": "a calm neutral expression",
@@ -82,13 +82,16 @@ def build_emotion_prompt(emotion: str) -> str:
         "angry": "an angry expression with sharper eyes, lowered brows, and a displeased mouth",
         "thinking": "a thinking expression with a thoughtful gaze, slightly raised or tilted brows, and a small contemplative mouth",
     }
-    description = descriptions.get(emotion, descriptions["neutral"])
+    target = (emotion_label or emotion).strip()
+    description = descriptions.get(emotion)
+    if description is None:
+        description = f"a custom expression that clearly conveys this user-provided emotion label or instruction: {target}"
 
     return f"""Edit the provided Stack-chan / PNGTuber character image.
 
 Output a single image, not a grid.
 
-Create the emotion base image for: {emotion}.
+Create the emotion base image for: {target}.
 Expression target: {description}.
 
 Keep completely unchanged:

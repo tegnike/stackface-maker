@@ -21,6 +21,27 @@
 
         <section id="createTab" class="tab-panel active">
           <div class="section">
+            <h2>画像生成設定</h2>
+            <label class="field">
+              <span>画像生成モデル</span>
+              <select id="modelSelect">
+                <option value="gemini|gemini-3-pro-image-preview">Gemini Nano Banana Pro（高品質）</option>
+                <option value="gemini|gemini-3.1-flash-image-preview">Gemini Nano Banana 2（Preview）</option>
+                <option value="gemini|gemini-2.5-flash-image">Gemini Nano Banana（高速）</option>
+                <option value="openai|gpt-image-2">OpenAI GPT Image 2</option>
+              </select>
+            </label>
+            <label id="geminiKeyWrap" class="field">
+              <span>Gemini APIキー</span>
+              <input id="geminiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 GEMINI_API_KEY" />
+            </label>
+            <label id="openaiKeyWrap" class="field hidden">
+              <span>OpenAI APIキー</span>
+              <input id="openaiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 OPENAI_API_KEY" />
+            </label>
+          </div>
+
+          <div class="section">
             <h2>1. 標準表情</h2>
             <label class="file-button">
               標準表情の画像を選択...
@@ -42,6 +63,15 @@
                 <option value="thinking" data-label="考え中">考え中</option>
               </select>
             </label>
+            <div class="custom-emotion">
+              <input id="customEmotionName" type="text" placeholder="カスタム表情: 驚き、眠い、ドヤ顔など" />
+            </div>
+            <p class="hint">入力した場合は、上の選択肢の代わりにこの表情名で画像を生成します。</p>
+            <label class="field">
+              <span>感情画像用プロンプト</span>
+              <textarea id="emotionExtraPrompt" rows="3" placeholder="例: 目を大きく開き、驚いた表情にする。髪型や輪郭は変えない。"></textarea>
+            </label>
+            <p class="hint">この感情の画像を生成するときだけ、固定指示へ追加します。</p>
             <button id="generateEmotion" class="primary">この感情の画像を生成...</button>
             <div id="emotionOr" class="or">または</div>
             <label id="emotionFileLabel" class="file-button">
@@ -71,27 +101,10 @@
           <div class="section">
             <h2>3. 目と口の反対状態</h2>
             <label class="field">
-              <span>画像生成モデル</span>
-              <select id="modelSelect">
-                <option value="gemini|gemini-3-pro-image-preview">Gemini Nano Banana Pro（高品質）</option>
-                <option value="gemini|gemini-3.1-flash-image-preview">Gemini Nano Banana 2（Preview）</option>
-                <option value="gemini|gemini-2.5-flash-image">Gemini Nano Banana（高速）</option>
-                <option value="openai|gpt-image-2">OpenAI GPT Image 2</option>
-              </select>
+              <span>反対状態用プロンプト</span>
+              <textarea id="variantExtraPrompt" rows="3" placeholder="例: 髪型と輪郭は変えない。頬の赤みは控えめ。口は小さめにする。"></textarea>
             </label>
-            <label id="geminiKeyWrap" class="field">
-              <span>Gemini APIキー</span>
-              <input id="geminiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 GEMINI_API_KEY" />
-            </label>
-            <label id="openaiKeyWrap" class="field hidden">
-              <span>OpenAI APIキー</span>
-              <input id="openaiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 OPENAI_API_KEY" />
-            </label>
-            <label class="field">
-              <span>追加プロンプト</span>
-              <textarea id="extraPrompt" rows="4" placeholder="例: 髪型と輪郭は変えない。頬の赤みは控えめ。口は小さめにする。"></textarea>
-            </label>
-            <p class="hint">感情画像と反対状態画像の生成時に、既存の固定指示へ追加します。</p>
+            <p class="hint">反対状態の画像を生成するときだけ、固定指示へ追加します。</p>
             <button id="generateVariant" class="primary">反対状態の画像を生成...</button>
             <div class="or">または</div>
             <label class="file-button">

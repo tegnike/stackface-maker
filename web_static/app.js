@@ -109,6 +109,13 @@ async function upload(role, file, extra = {}) {
 }
 
 function selectedEmotion() {
+  const custom = $("customEmotionName")?.value.trim() || "";
+  if (custom) {
+    return {
+      emotion: "custom",
+      label: custom,
+    };
+  }
   const option = $("emotionSelect").selectedOptions[0];
   return {
     emotion: option.value,
@@ -188,9 +195,7 @@ async function generateEmotion() {
   const { emotion, label } = selectedEmotion();
   if (emotion === "neutral") return;
   const { provider, model } = modelParts();
-  if (provider !== "gemini") {
-    throw new Error("感情画像生成はGemini系モデルのみ対応しています");
-  }
+  const key = provider === "openai" ? $("openaiKey").value : $("geminiKey").value;
   $("generateEmotion").disabled = true;
   try {
     await withBusy(`${label}の画像を生成中...`, async () => {
@@ -202,11 +207,12 @@ async function generateEmotion() {
           sessionId: state.sessionId,
           emotion,
           emotionLabel: label,
-          apiKey: $("geminiKey").value,
+          provider,
+          apiKey: key,
           model,
           imageSize: "2K",
           colorMatch: $("colorMatch").checked,
-          extraPrompt: $("extraPrompt").value,
+          extraPrompt: $("emotionExtraPrompt").value,
         }),
       });
       state.baseUrl = data.url;
@@ -240,7 +246,7 @@ async function generateVariant() {
           imageSize: "2K",
           baseEyeOn: boolValue("baseEye"),
           baseMouthOn: boolValue("baseMouth"),
-          extraPrompt: $("extraPrompt").value,
+          extraPrompt: $("variantExtraPrompt").value,
         }),
       });
       state.variantUrl = data.url;
@@ -695,6 +701,7 @@ function bind() {
   $("emotionFile").addEventListener("change", wrap(onEmotionFile));
   $("variantFile").addEventListener("change", wrap(onVariantFile));
   $("emotionSelect").addEventListener("change", wrap(updateEmotionControls));
+  $("customEmotionName").addEventListener("input", wrap(updateEmotionControls));
   $("modelSelect").addEventListener("change", updateProviderFields);
   $("generateEmotion").addEventListener("click", wrap(generateEmotion));
   $("generateVariant").addEventListener("click", wrap(generateVariant));

@@ -101,6 +101,7 @@ class WebImageService:
     def generate_emotion_base(
         self,
         session: WebSession,
+        provider: str,
         api_key: str,
         emotion: str,
         emotion_label: str,
@@ -113,15 +114,23 @@ class WebImageService:
         if source is None:
             raise RuntimeError("先に標準表情の画像を選択してください")
 
-        prompt = self.append_extra_prompt(build_emotion_prompt(emotion), extra_prompt)
-        result = generate_emotion_image(
-            api_key=api_key,
-            image_path=str(source),
-            emotion=emotion,
-            prompt=prompt,
-            model=model,
-            image_size=image_size,
-        )
+        prompt = self.append_extra_prompt(build_emotion_prompt(emotion, emotion_label), extra_prompt)
+        if provider == "openai":
+            result = generate_counterpart_image_openai(
+                api_key=api_key,
+                image_path=str(source),
+                prompt=prompt,
+                model=model or DEFAULT_OPENAI_IMAGE_MODEL,
+            )
+        else:
+            result = generate_emotion_image(
+                api_key=api_key,
+                image_path=str(source),
+                emotion=emotion,
+                prompt=prompt,
+                model=model,
+                image_size=image_size,
+            )
         generated = self.decode_image_bytes(result.image_bytes)
         reference = load_image_as_bgra(str(source))
         generated = cv2.resize(generated, (reference.shape[1], reference.shape[0]), interpolation=cv2.INTER_AREA)

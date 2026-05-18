@@ -29,6 +29,7 @@ class GenerateEmotionRequest(BaseModel):
     sessionId: str
     emotion: str
     emotionLabel: str
+    provider: str = "gemini"
     apiKey: str = ""
     model: str = DEFAULT_MODEL
     imageSize: str = "2K"
@@ -108,11 +109,14 @@ async def upload_image(
 def generate_emotion(req: GenerateEmotionRequest):
     try:
         session = service.get_session(req.sessionId)
-        api_key = req.apiKey.strip() or os.environ.get("GEMINI_API_KEY", "").strip()
+        provider = req.provider or "gemini"
+        env_key = "OPENAI_API_KEY" if provider == "openai" else "GEMINI_API_KEY"
+        api_key = req.apiKey.strip() or os.environ.get(env_key, "").strip()
         if not api_key:
-            raise RuntimeError("Gemini APIキーが必要です")
+            raise RuntimeError(("OpenAI" if provider == "openai" else "Gemini") + " APIキーが必要です")
         path = service.generate_emotion_base(
             session=session,
+            provider=provider,
             api_key=api_key,
             emotion=req.emotion,
             emotion_label=req.emotionLabel,
