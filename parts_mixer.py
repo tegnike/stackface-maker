@@ -1489,6 +1489,8 @@ class PartsMixerWindow(QMainWindow):
         self._update_canvases()
         self._apply_auto_masks()
         self._schedule_preview_update()
+        if hasattr(self, 'control_tabs'):
+            self.control_tabs.setCurrentIndex(1)
 
     def _align_variant_to_base(self, base: np.ndarray, variant: np.ndarray) -> tuple:
         """反対状態の画像を基準画像へ軽く位置合わせする"""

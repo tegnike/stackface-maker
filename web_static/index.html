@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stack-chan Face Maker Web</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <header>
+          <h1>Stack-chan Face Maker</h1>
+          <p>CoreS3向け表情素材</p>
+        </header>
+
+        <nav class="tabs" aria-label="操作タブ">
+          <button class="tab active" data-tab="create">作成</button>
+          <button class="tab" data-tab="adjust">調整・保存</button>
+        </nav>
+
+        <section id="createTab" class="tab-panel active">
+          <div class="section">
+            <h2>1. 標準表情</h2>
+            <label class="file-button">
+              標準表情の画像を選択...
+              <input id="standardFile" type="file" accept="image/*" />
+            </label>
+            <div id="standardName" class="meta">未選択</div>
+            <img id="standardPreview" class="thumb hidden" alt="" />
+          </div>
+
+          <div class="section">
+            <h2>2. 作成する感情</h2>
+            <label class="field">
+              <span>感情</span>
+              <select id="emotionSelect">
+                <option value="neutral" data-label="標準">標準</option>
+                <option value="happy" data-label="喜び">喜び</option>
+                <option value="sad" data-label="悲しみ">悲しみ</option>
+                <option value="angry" data-label="怒り">怒り</option>
+                <option value="thinking" data-label="考え中">考え中</option>
+              </select>
+            </label>
+            <button id="generateEmotion" class="primary">この感情の画像を生成...</button>
+            <div id="emotionOr" class="or">または</div>
+            <label id="emotionFileLabel" class="file-button">
+              この感情の画像を選択...
+              <input id="emotionFile" type="file" accept="image/*" />
+            </label>
+            <div id="baseName" class="meta">感情画像: 未選択</div>
+            <img id="basePreview" class="thumb hidden" alt="" />
+            <div class="state-grid">
+              <label class="field">
+                <span>基準の目</span>
+                <select id="baseEye">
+                  <option value="true">ON（開き）</option>
+                  <option value="false">OFF（閉じ）</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>口</span>
+                <select id="baseMouth">
+                  <option value="true">ON（開き）</option>
+                  <option value="false">OFF（閉じ）</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>3. 目と口の反対状態</h2>
+            <label class="field">
+              <span>画像生成モデル</span>
+              <select id="modelSelect">
+                <option value="gemini|gemini-3-pro-image-preview">Gemini Nano Banana Pro（高品質）</option>
+                <option value="gemini|gemini-3.1-flash-image-preview">Gemini Nano Banana 2（Preview）</option>
+                <option value="gemini|gemini-2.5-flash-image">Gemini Nano Banana（高速）</option>
+                <option value="openai|gpt-image-2">OpenAI GPT Image 2</option>
+              </select>
+            </label>
+            <label id="geminiKeyWrap" class="field">
+              <span>Gemini APIキー</span>
+              <input id="geminiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 GEMINI_API_KEY" />
+            </label>
+            <label id="openaiKeyWrap" class="field hidden">
+              <span>OpenAI APIキー</span>
+              <input id="openaiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 OPENAI_API_KEY" />
+            </label>
+            <label class="field">
+              <span>追加プロンプト</span>
+              <textarea id="extraPrompt" rows="4" placeholder="例: 髪型と輪郭は変えない。頬の赤みは控えめ。口は小さめにする。"></textarea>
+            </label>
+            <p class="hint">感情画像と反対状態画像の生成時に、既存の固定指示へ追加します。</p>
+            <button id="generateVariant" class="primary">反対状態の画像を生成...</button>
+            <div class="or">または</div>
+            <label class="file-button">
+              反対状態の画像を選択...
+              <input id="variantFile" type="file" accept="image/*" />
+            </label>
+            <div id="variantName" class="meta">反対状態画像: 未選択</div>
+            <img id="variantPreview" class="thumb hidden" alt="" />
+          </div>
+
+          <div class="section">
+            <h2>4. 4パターン作成</h2>
+            <button id="preparePatterns" class="commit">4パターンを作成</button>
+          </div>
+        </section>
+
+        <section id="adjustTab" class="tab-panel">
+          <div class="section">
+            <h2>ブラシ</h2>
+            <label class="field">
+              <span>サイズ: <b id="brushValue">30</b>px</span>
+              <input id="brushSize" type="range" min="1" max="120" value="30" />
+            </label>
+            <div class="segmented">
+              <button id="paintMode" class="active" type="button">マスクを塗る</button>
+              <button id="eraseMode" type="button">マスクを消す</button>
+            </div>
+            <label class="check">
+              <input id="colorMatch" type="checkbox" checked />
+              <span>生成画像の色を合わせる</span>
+            </label>
+            <p class="hint">AI生成で肌や髪の色が変わった場合に、標準画像の色味へ寄せます。</p>
+          </div>
+
+          <div class="section">
+            <h2>フェザー</h2>
+            <p class="hint">マスクの境界をぼかして、目や口の貼り付け感を減らします。大きすぎると周囲も混ざります。</p>
+            <label class="field">
+              <span>幅: <b id="featherValue">10</b>px</span>
+              <input id="feather" type="range" min="0" max="50" value="10" />
+            </label>
+          </div>
+
+          <div class="section">
+            <h2>保存</h2>
+            <label class="check">
+              <input id="resizeCores3" type="checkbox" checked />
+              <span>CoreS3用 320x240で保存</span>
+            </label>
+            <button id="downloadZip" class="save">4パターンをZIP保存...</button>
+          </div>
+        </section>
+      </aside>
+
+      <div id="sidebarSplitter" class="splitter splitter-main" role="separator" aria-label="サイドバー幅"></div>
+
+      <main class="workspace">
+        <section class="mask-area">
+          <div class="area-toolbar">
+            <h2>マスク表示</h2>
+            <label class="opacity-control">
+              <span>ベース透過</span>
+              <input id="baseOpacity" type="range" min="0" max="100" value="50" />
+              <b id="baseOpacityValue">50%</b>
+            </label>
+            <div class="zoom-controls">
+              <button id="maskZoomOut" type="button">-</button>
+              <b id="maskZoomValue">100%</b>
+              <button id="maskZoomIn" type="button">+</button>
+              <button id="maskZoomFit" type="button">フィット</button>
+            </div>
+          </div>
+          <div class="mask-card">
+            <div class="mask-head">
+              <h2>目パーツ - マスク描画</h2>
+              <button id="clearEye" type="button">クリア</button>
+            </div>
+            <div class="canvas-wrap">
+              <img id="eyeBaseBackdrop" class="base-backdrop" alt="" />
+              <img id="eyeBackdrop" alt="" />
+              <canvas id="eyeMask"></canvas>
+            </div>
+          </div>
+          <div class="mask-card">
+            <div class="mask-head">
+              <h2>口パーツ - マスク描画</h2>
+              <button id="clearMouth" type="button">クリア</button>
+            </div>
+            <div class="canvas-wrap">
+              <img id="mouthBaseBackdrop" class="base-backdrop" alt="" />
+              <img id="mouthBackdrop" alt="" />
+              <canvas id="mouthMask"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <div id="workspaceSplitter" class="splitter splitter-workspace" role="separator" aria-label="マスクとプレビューの幅"></div>
+
+        <section class="preview-panel">
+          <div class="preview-head">
+            <h2>プレビュー（4パターン）</h2>
+            <div class="preview-actions">
+              <div class="zoom-controls">
+                <button id="previewZoomOut" type="button">-</button>
+                <b id="previewZoomValue">100%</b>
+                <button id="previewZoomIn" type="button">+</button>
+                <button id="previewZoomFit" type="button">フィット</button>
+              </div>
+              <span id="previewAutoState" class="auto-state">自動反映</span>
+            </div>
+          </div>
+          <div id="previewList" class="preview-list">
+            <div class="preview-item"><h3>目OFF 口OFF</h3><div class="empty"></div></div>
+            <div class="preview-item"><h3>目ON 口OFF</h3><div class="empty"></div></div>
+            <div class="preview-item"><h3>目OFF 口ON</h3><div class="empty"></div></div>
+            <div class="preview-item"><h3>目ON 口ON</h3><div class="empty"></div></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="busyOverlay" class="busy-overlay hidden" aria-live="polite" aria-modal="true">
+      <div class="busy-box">
+        <div class="spinner" aria-hidden="true"></div>
+        <div id="busyMessage" class="busy-message">処理中...</div>
+      </div>
+    </div>
+    <div id="status" class="status">起動中...</div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
