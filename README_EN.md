@@ -45,6 +45,55 @@ Open `http://127.0.0.1:8765` in your browser.
 - If left empty, the app uses `GEMINI_API_KEY` / `OPENAI_API_KEY`.
 - Save downloads a ZIP containing a `{emotion}_{base}/` folder with the four PNGs.
 
+### Step 2.5: Prepare the First Standard Face Image
+
+If you do not have a base image yet, generate one by using `sample/standard/eyeON_mouthON.png` as the first reference image and your target character image as the second reference image.
+
+- Reference image 1: composition, face size, eye/mouth ON state, and Stack-chan display framing
+- Reference image 2: character design, hairstyle, eyes, clothing, and colors
+
+Example image generation prompt:
+
+```text
+Generate a StackFace Maker eyeON_mouthON standard face asset.
+This is not a portrait. It is a cropped face texture for a 320x240 LCD.
+
+Use reference image 1 as the strict composition and expression guide.
+Use reference image 2 only as the character identity/design guide.
+
+Absolutely critical composition rule:
+- The outline of the face must be outside the canvas on all sides.
+- Do not show the oval shape of the face.
+- Do not show a chin, jawline, ears, neck, collar, shoulders, clothes, or hands.
+- The bottom edge of the image must cut the face immediately below the small open mouth, before any chin or jawline can appear.
+- The left and right edges must cut through side hair/cheeks, before ears can appear.
+- The top edge must cut through bangs/hair.
+
+Match reference image 1:
+- 4:3 aspect ratio, preferably 640x480.
+- Face-only extreme close-up.
+- Both eyes open.
+- Small natural open speaking mouth near the bottom edge.
+- Nose is only a tiny dot.
+- Blush marks on both cheeks.
+- Flat clean anime style suitable for later eye/mouth mask generation.
+
+Character to draw from reference image 2:
+- Anime girl with long silver-white hair, twin side buns, straight bangs, blue eyes, fair skin, and a neat school-uniform look.
+- Preserve only her character identity: silver-white hair with soft gray shadows, blue eyes, fair skin, and a soft neutral friendly expression.
+- Long side hair may be visible only where it is cropped by the frame.
+- Do not zoom out to show the full twin buns or uniform.
+
+Background:
+- Transparent background if supported. Otherwise use a plain flat white background.
+- Never draw a checkerboard pattern, UI, device, title, text, watermark, or scenery.
+
+Negative prompt:
+portrait, full head, full face oval, chin, jawline, ears, neck, collar, uniform, shoulders, body, hands, full buns, visible twin buns, character sheet, grid, multiple poses, text, watermark, UI, device mockup, background scene, big smile, large mouth.
+
+If there is any doubt, prioritize matching the crop and feature positions of reference image 1 over showing the complete character design from reference image 2.
+```
+
 ### Step 3: Create Stack-chan Face Assets
 
 0. Select a generation model and enter the provider API key.
