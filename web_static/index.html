@@ -14,33 +14,70 @@
           <p>CoreS3向け表情素材</p>
         </header>
 
+        <div class="section settings-section">
+          <h2>画像生成設定</h2>
+          <label class="field">
+            <span>画像生成モデル</span>
+            <select id="modelSelect">
+              <option value="gemini|gemini-3-pro-image-preview">Gemini Nano Banana Pro（高品質）</option>
+              <option value="gemini|gemini-3.1-flash-image-preview">Gemini Nano Banana 2（Preview）</option>
+              <option value="gemini|gemini-2.5-flash-image">Gemini Nano Banana（高速）</option>
+              <option value="openai|gpt-image-2">OpenAI GPT Image 2</option>
+            </select>
+          </label>
+          <label id="geminiKeyWrap" class="field">
+            <span>Gemini APIキー</span>
+            <input id="geminiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 GEMINI_API_KEY" />
+          </label>
+          <label id="openaiKeyWrap" class="field hidden">
+            <span>OpenAI APIキー</span>
+            <input id="openaiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 OPENAI_API_KEY" />
+          </label>
+        </div>
+
         <nav class="tabs" aria-label="操作タブ">
-          <button class="tab active" data-tab="create">作成</button>
+          <button class="tab active" data-tab="standardGen">標準表情生成</button>
+          <button class="tab" data-tab="create">4パターン作成</button>
           <button class="tab" data-tab="adjust">調整・保存</button>
         </nav>
 
-        <section id="createTab" class="tab-panel active">
-          <div class="section">
-            <h2>画像生成設定</h2>
-            <label class="field">
-              <span>画像生成モデル</span>
-              <select id="modelSelect">
-                <option value="gemini|gemini-3-pro-image-preview">Gemini Nano Banana Pro（高品質）</option>
-                <option value="gemini|gemini-3.1-flash-image-preview">Gemini Nano Banana 2（Preview）</option>
-                <option value="gemini|gemini-2.5-flash-image">Gemini Nano Banana（高速）</option>
-                <option value="openai|gpt-image-2">OpenAI GPT Image 2</option>
-              </select>
-            </label>
-            <label id="geminiKeyWrap" class="field">
-              <span>Gemini APIキー</span>
-              <input id="geminiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 GEMINI_API_KEY" />
-            </label>
-            <label id="openaiKeyWrap" class="field hidden">
-              <span>OpenAI APIキー</span>
-              <input id="openaiKey" type="password" autocomplete="off" placeholder="未入力なら環境変数 OPENAI_API_KEY" />
-            </label>
+        <section id="standardGenTab" class="tab-panel active">
+          <div class="section intro-section">
+            <h2>任意: 最初の標準表情を作る</h2>
+            <p class="hint">すでに標準表情画像がある場合は、このタブは飛ばして「4パターン作成」へ進んでください。</p>
           </div>
 
+          <div class="section">
+            <h2>1. キャラクター画像</h2>
+            <label class="file-button">
+              キャラクター画像を選択...
+              <input id="characterFile" type="file" accept="image/*" />
+            </label>
+            <div id="characterName" class="meta">未選択</div>
+            <img id="characterPreview" class="thumb hidden" alt="" />
+          </div>
+
+          <div class="section">
+            <h2>2. 標準表情を生成</h2>
+            <p class="hint">内蔵の `sample/standard/eyeON_mouthON.png` を構図リファレンスに使い、選択したキャラクター画像から目ON・口ONの標準表情を作ります。</p>
+            <label class="field">
+              <span>追加プロンプト</span>
+              <textarea id="standardExtraPrompt" rows="3" placeholder="例: もっと顔を画面いっぱいにする。口は小さめ。キャラの髪色と目色を優先する。"></textarea>
+            </label>
+            <div class="preset-buttons">
+              <button type="button" data-standard-preset="もっと顔アップ。顔の輪郭、顎、首、服を絶対に出さない。">もっと顔アップ</button>
+              <button type="button" data-standard-preset="口をさらに小さくし、sample/standard/eyeON_mouthON.png の口サイズに近づける。">口を小さく</button>
+              <button type="button" data-standard-preset="参照画像1の構図、目・鼻・口の位置、トリミングを最優先する。">構図を優先</button>
+              <button type="button" data-standard-preset="参照画像2の髪色、目色、髪型、キャラクター性をより強く反映する。">キャラ特徴を強める</button>
+            </div>
+            <button id="generateStandardFace" class="primary">標準表情を生成...</button>
+            <div id="generatedStandardName" class="meta">生成結果: 未生成</div>
+            <img id="generatedStandardPreview" class="thumb hidden" alt="" />
+            <button id="useGeneratedStandard" class="commit hidden" type="button">この画像を標準表情として使う</button>
+          </div>
+        </section>
+
+        <section id="createTab" class="tab-panel">
           <div class="section">
             <h2>1. 標準表情</h2>
             <label class="file-button">

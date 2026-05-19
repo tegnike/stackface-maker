@@ -22,12 +22,15 @@ from gemini_generator import (
     GeminiImageGenerationError,
     build_counterpart_prompt,
     build_emotion_prompt,
+    build_standard_face_prompt,
     generate_counterpart_image,
     generate_emotion_image,
+    generate_referenced_image,
 )
 from openai_generator import (
     DEFAULT_OPENAI_IMAGE_MODEL,
     generate_counterpart_image_openai,
+    generate_referenced_image_openai,
 )
 
 
@@ -38,12 +41,16 @@ PATTERN_NAMES = [
     "eyeON_mouthON.png",
 ]
 
+STANDARD_FACE_REFERENCE = Path(__file__).parent / "sample" / "standard" / "eyeON_mouthON.png"
+
 
 @dataclass
 class WebSession:
     id: str
     root: Path
     standard_path: Optional[Path] = None
+    standard_candidate_path: Optional[Path] = None
+    character_path: Optional[Path] = None
     base_path: Optional[Path] = None
     variant_path: Optional[Path] = None
     aligned_variant_path: Optional[Path] = None
@@ -84,7 +91,9 @@ class WebImageService:
         if not save_image(str(target), image):
             raise RuntimeError("画像の保存に失敗しました")
 
-        if role == "standard":
+        if role == "character":
+            session.character_path = target
+        elif role == "standard":
             session.standard_path = target
             session.source_name = self.safe_stem(filename)
             if session.base_path is None:
@@ -97,6 +106,58 @@ class WebImageService:
         else:
             raise ValueError("unknown role")
         return target
+
+    def generate_standard_face(
+        self,
+        session: WebSession,
+        provider: str,
+        api_key: str,
+        model: str,
+        image_size: str,
+        extra_prompt: str = "",
+    ) -> Path:
+        if session.character_path is None:
+            raise RuntimeError("先にキャラクター画像を選択してください")
+        if not STANDARD_FACE_REFERENCE.exists():
+            raise RuntimeError("標準表情の参照サンプルが見つかりません")
+
+        prompt = self.append_extra_prompt(build_standard_face_prompt(), extra_prompt)
+        reference_paths = [str(STANDARD_FACE_REFERENCE), str(session.character_path)]
+        if provider == "openai":
+            result = generate_referenced_image_openai(
+                api_key=api_key,
+                image_paths=reference_paths,
+                prompt=prompt,
+                model=model or DEFAULT_OPENAI_IMAGE_MODEL,
+                size="auto",
+            )
+        else:
+            result = generate_referenced_image(
+                api_key=api_key,
+                image_paths=reference_paths,
+                prompt=prompt,
+                model=model or DEFAULT_MODEL,
+                image_size=image_size,
+            )
+
+        generated = self.decode_image_bytes(result.image_bytes)
+        output = session.root / "generated_standard.png"
+        if not save_image(str(output), generated):
+            raise RuntimeError("標準表情画像の保存に失敗しました")
+        session.standard_candidate_path = output
+        return output
+
+    def use_generated_standard(self, session: WebSession) -> Path:
+        if session.standard_candidate_path is None:
+            raise RuntimeError("先に標準表情を生成してください")
+        session.standard_path = session.standard_candidate_path
+        session.base_path = session.standard_candidate_path
+        session.variant_path = None
+        session.aligned_variant_path = None
+        session.output_paths = []
+        session.source_name = "generated_standard"
+        session.emotion_label = "標準"
+        return session.standard_candidate_path
 
     def generate_emotion_base(
         self,

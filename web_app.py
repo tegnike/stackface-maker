@@ -48,6 +48,15 @@ class GenerateVariantRequest(BaseModel):
     extraPrompt: str = ""
 
 
+class GenerateStandardFaceRequest(BaseModel):
+    sessionId: str
+    provider: str = "gemini"
+    apiKey: str = ""
+    model: str = DEFAULT_MODEL
+    imageSize: str = "2K"
+    extraPrompt: str = ""
+
+
 class PrepareRequest(BaseModel):
     sessionId: str
     baseEyeOn: bool = True
@@ -66,6 +75,10 @@ class RenderRequest(BaseModel):
 
 
 class UseStandardRequest(BaseModel):
+    sessionId: str
+
+
+class UseGeneratedStandardRequest(BaseModel):
     sessionId: str
 
 
@@ -91,8 +104,8 @@ async def upload_image(
     emotionLabel: Optional[str] = Form(None),
     file: UploadFile = File(...),
 ):
-    if role not in {"standard", "base", "variant"}:
-        raise json_error("role must be standard, base, or variant")
+    if role not in {"character", "standard", "base", "variant"}:
+        raise json_error("role must be character, standard, base, or variant")
     try:
         session = service.get_session(sessionId)
         path = service.save_upload(session, role, file.filename or f"{role}.png", await file.read())
@@ -125,6 +138,43 @@ def generate_emotion(req: GenerateEmotionRequest):
             color_match=req.colorMatch,
             extra_prompt=req.extraPrompt,
         )
+        return {"url": service.image_url(session, path), "filename": path.name}
+    except KeyError:
+        raise json_error("セッションが見つかりません", 404)
+    except Exception as e:
+        raise json_error(str(e))
+
+
+@app.post("/api/generate-standard-face")
+def generate_standard_face(req: GenerateStandardFaceRequest):
+    try:
+        session = service.get_session(req.sessionId)
+        provider = req.provider or "gemini"
+        env_key = "OPENAI_API_KEY" if provider == "openai" else "GEMINI_API_KEY"
+        api_key = req.apiKey.strip() or os.environ.get(env_key, "").strip()
+        if not api_key:
+            raise RuntimeError(("OpenAI" if provider == "openai" else "Gemini") + " APIキーが必要です")
+        default_model = DEFAULT_OPENAI_IMAGE_MODEL if provider == "openai" else DEFAULT_MODEL
+        path = service.generate_standard_face(
+            session=session,
+            provider=provider,
+            api_key=api_key,
+            model=req.model or default_model,
+            image_size=req.imageSize,
+            extra_prompt=req.extraPrompt,
+        )
+        return {"url": service.image_url(session, path), "filename": path.name}
+    except KeyError:
+        raise json_error("セッションが見つかりません", 404)
+    except Exception as e:
+        raise json_error(str(e))
+
+
+@app.post("/api/use-generated-standard")
+def use_generated_standard(req: UseGeneratedStandardRequest):
+    try:
+        session = service.get_session(req.sessionId)
+        path = service.use_generated_standard(session)
         return {"url": service.image_url(session, path), "filename": path.name}
     except KeyError:
         raise json_error("セッションが見つかりません", 404)

@@ -95,8 +95,86 @@ def generate_counterpart_image_openai(
     return OpenAIImageResult(image_bytes=base64.b64decode(items[0]["b64_json"]))
 
 
+def generate_referenced_image_openai(
+    api_key: str,
+    image_paths: list[str],
+    prompt: str,
+    model: str = DEFAULT_OPENAI_IMAGE_MODEL,
+    size: str = "auto",
+    quality: str = "medium",
+    timeout: int = 180,
+) -> OpenAIImageResult:
+    """Generate one image from multiple reference images using OpenAI Image Edit."""
+    if not api_key:
+        raise OpenAIImageGenerationError("OpenAI APIキーが設定されていません")
+    if not image_paths:
+        raise OpenAIImageGenerationError("参照画像が指定されていません")
+
+    fields = {
+        "model": model,
+        "prompt": prompt,
+        "size": size,
+        "quality": quality,
+        "output_format": "png",
+    }
+    files = []
+    for image_path in image_paths:
+        source_path = Path(image_path)
+        if not source_path.exists():
+            raise OpenAIImageGenerationError(f"画像ファイルが見つかりません: {image_path}")
+        files.append(
+            (
+                "image[]",
+                source_path.name,
+                source_path.read_bytes(),
+                mimetypes.guess_type(source_path.name)[0] or "image/png",
+            )
+        )
+
+    body, content_type = _encode_multipart_items(fields, files)
+    req = request.Request(
+        OPENAI_IMAGE_EDIT_ENDPOINT,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": content_type,
+        },
+        method="POST",
+    )
+
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            response_body = response.read()
+    except error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        raise OpenAIImageGenerationError(f"OpenAI API エラー: HTTP {e.code}\n{detail}") from e
+    except error.URLError as e:
+        raise OpenAIImageGenerationError(f"OpenAI API に接続できません: {e}") from e
+
+    try:
+        data = json.loads(response_body.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        raise OpenAIImageGenerationError("OpenAI API のレスポンス解析に失敗しました") from e
+
+    items = data.get("data") or []
+    if not items or not items[0].get("b64_json"):
+        message = data.get("error", {}).get("message") or "画像が返されませんでした"
+        raise OpenAIImageGenerationError(message)
+
+    return OpenAIImageResult(image_bytes=base64.b64decode(items[0]["b64_json"]))
+
+
 def _encode_multipart(fields: dict, files: dict) -> tuple:
     """Encode multipart/form-data without adding a requests dependency."""
+    file_items = [
+        (name, filename, content, mime_type)
+        for name, (filename, content, mime_type) in files.items()
+    ]
+    return _encode_multipart_items(fields, file_items)
+
+
+def _encode_multipart_items(fields: dict, files: list[tuple[str, str, bytes, str]]) -> tuple:
+    """Encode multipart/form-data file items without adding a requests dependency."""
     boundary = f"----StackFaceMaker{uuid.uuid4().hex}"
     chunks = []
 
@@ -108,7 +186,7 @@ def _encode_multipart(fields: dict, files: dict) -> tuple:
             b"\r\n",
         ])
 
-    for name, (filename, content, mime_type) in files.items():
+    for name, filename, content, mime_type in files:
         chunks.extend([
             f"--{boundary}\r\n".encode("utf-8"),
             (

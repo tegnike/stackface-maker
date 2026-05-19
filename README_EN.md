@@ -13,6 +13,7 @@ StackFace Maker is derived from [EasyPNGTuber](https://github.com/rotejin/EasyPN
 
 ## Features
 
+- Generate the first standard face image from a character reference image
 - Generate the opposite eye/mouth state from one base image using an image generation API
 - Create four expression patterns from a base image and one generated/selected variant
 - Save final assets at 320x240 for Stack CoreS3 / M5Stack CoreS3
@@ -45,14 +46,16 @@ Open `http://127.0.0.1:8765` in your browser.
 - If left empty, the app uses `GEMINI_API_KEY` / `OPENAI_API_KEY`.
 - Save downloads a ZIP containing a `{emotion}_{base}/` folder with the four PNGs.
 
-### Step 2.5: Prepare the First Standard Face Image
+### Optional: Prepare the First Standard Face Image
 
-If you do not have a base image yet, generate one by using `sample/standard/eyeON_mouthON.png` as the first reference image and your target character image as the second reference image.
+If you do not have a base image yet, open the "Standard Face Generation" tab, select a character image, and click "Generate Standard Face". If you already have a standard face image, skip this optional step and continue to the "Create 4 Patterns" tab. The app uses `sample/standard/eyeON_mouthON.png` as the first reference image and your selected character image as the second reference image.
 
 - Reference image 1: composition, face size, eye/mouth ON state, and Stack-chan display framing
 - Reference image 2: character design, hairstyle, eyes, clothing, and colors
+- If the result looks good, click "Use this image as the standard face" to continue into the normal four-pattern workflow
+- Use the preset extra instructions such as "more close-up", "smaller mouth", "prioritize composition", and "stronger character features" when regenerating
 
-Example image generation prompt:
+Example prompt for external image generation tools or custom extra instructions:
 
 ```text
 Generate a StackFace Maker eyeON_mouthON standard face asset.
@@ -99,6 +102,7 @@ If there is any doubt, prioritize matching the crop and feature positions of ref
 0. Select a generation model and enter the provider API key.
    - If left blank, the app uses `GEMINI_API_KEY` / `OPENAI_API_KEY`.
 1. Select a standard/base face image.
+   - Use the "Create 4 Patterns" tab for this main workflow.
    - 640x480 is recommended for editing.
    - Set the base eye and mouth state in the UI.
    - Choose a preset emotion, or enter a temporary custom emotion label such as "surprised" or "sleepy".

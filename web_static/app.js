@@ -1,5 +1,7 @@
 const state = {
   sessionId: null,
+  characterUrl: "",
+  generatedStandardUrl: "",
   standardUrl: "",
   baseUrl: "",
   variantUrl: "",
@@ -164,6 +166,23 @@ async function onStandardFile(e) {
   });
 }
 
+async function onCharacterFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  await withBusy("キャラクター画像を読み込み中...", async () => {
+    setStatus("キャラクター画像を読み込み中...");
+    const data = await upload("character", file);
+    state.characterUrl = data.url;
+    state.generatedStandardUrl = "";
+    $("characterName").textContent = file.name;
+    $("generatedStandardName").textContent = "生成結果: 未生成";
+    $("generatedStandardPreview").classList.add("hidden");
+    $("useGeneratedStandard").classList.add("hidden");
+    showImage("characterPreview", data.url);
+    setStatus("キャラクター画像を読み込みました", "ok");
+  });
+}
+
 async function onEmotionFile(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -189,6 +208,72 @@ async function onVariantFile(e) {
     showImage("variantPreview", data.url);
     setStatus("反対状態の画像を読み込みました", "ok");
   });
+}
+
+function appendStandardPreset(text) {
+  const input = $("standardExtraPrompt");
+  const current = input.value.trim();
+  input.value = current ? `${current}\n${text}` : text;
+  input.focus();
+}
+
+async function generateStandardFace() {
+  const { provider, model } = modelParts();
+  const key = provider === "openai" ? $("openaiKey").value : $("geminiKey").value;
+  $("generateStandardFace").disabled = true;
+  try {
+    await withBusy("標準表情を生成中...", async () => {
+      setStatus("標準表情を生成中...");
+      const data = await api("/api/generate-standard-face", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: state.sessionId,
+          provider,
+          apiKey: key,
+          model,
+          imageSize: "2K",
+          extraPrompt: $("standardExtraPrompt").value,
+        }),
+      });
+      state.generatedStandardUrl = data.url;
+      $("generatedStandardName").textContent = `生成結果: ${data.filename}`;
+      showImage("generatedStandardPreview", data.url);
+      $("useGeneratedStandard").classList.remove("hidden");
+      setStatus("標準表情の生成が完了しました", "ok");
+    });
+  } finally {
+    $("generateStandardFace").disabled = false;
+  }
+}
+
+async function useGeneratedStandard() {
+  $("useGeneratedStandard").disabled = true;
+  try {
+    await withBusy("標準表情として設定中...", async () => {
+      const data = await api("/api/use-generated-standard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: state.sessionId }),
+      });
+      state.standardUrl = data.url;
+      state.baseUrl = data.url;
+      state.variantUrl = "";
+      state.patternsReady = false;
+      $("standardName").textContent = `生成標準表情: ${data.filename}`;
+      $("baseName").textContent = "感情画像: 標準表情を使用";
+      $("variantName").textContent = "反対状態画像: 未選択";
+      $("variantPreview").classList.add("hidden");
+      $("baseEye").value = "true";
+      $("baseMouth").value = "true";
+      showImage("standardPreview", data.url);
+      showImage("basePreview", data.url);
+      switchTab("create");
+      setStatus("生成画像を標準表情として設定しました", "ok");
+    });
+  } finally {
+    $("useGeneratedStandard").disabled = false;
+  }
 }
 
 async function generateEmotion() {
@@ -568,6 +653,7 @@ function switchTab(name) {
   document.querySelectorAll(".tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === name);
   });
+  $("standardGenTab").classList.toggle("active", name === "standardGen");
   $("createTab").classList.toggle("active", name === "create");
   $("adjustTab").classList.toggle("active", name === "adjust");
 }
@@ -697,12 +783,18 @@ function bind() {
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => switchTab(button.dataset.tab));
   });
+  $("characterFile").addEventListener("change", wrap(onCharacterFile));
   $("standardFile").addEventListener("change", wrap(onStandardFile));
   $("emotionFile").addEventListener("change", wrap(onEmotionFile));
   $("variantFile").addEventListener("change", wrap(onVariantFile));
   $("emotionSelect").addEventListener("change", wrap(updateEmotionControls));
   $("customEmotionName").addEventListener("input", wrap(updateEmotionControls));
   $("modelSelect").addEventListener("change", updateProviderFields);
+  document.querySelectorAll("[data-standard-preset]").forEach((button) => {
+    button.addEventListener("click", () => appendStandardPreset(button.dataset.standardPreset));
+  });
+  $("generateStandardFace").addEventListener("click", wrap(generateStandardFace));
+  $("useGeneratedStandard").addEventListener("click", wrap(useGeneratedStandard));
   $("generateEmotion").addEventListener("click", wrap(generateEmotion));
   $("generateVariant").addEventListener("click", wrap(generateVariant));
   $("preparePatterns").addEventListener("click", wrap(preparePatterns));

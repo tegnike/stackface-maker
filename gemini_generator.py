@@ -104,6 +104,46 @@ Only change the face expression, primarily eyebrows, eyes, eyelids, and mouth. K
 The result must keep the exact same composition as the input image."""
 
 
+def build_standard_face_prompt() -> str:
+    """Prompt for creating the first eyeON/mouthON standard face from two references."""
+    return """Generate a StackFace Maker eyeON_mouthON standard face asset.
+This is not a portrait. It is a cropped face texture for a 320x240 LCD.
+
+Use reference image 1 as the strict composition and expression guide.
+Use reference image 2 only as the character identity/design guide.
+
+Absolutely critical composition rule:
+- The outline of the face must be outside the canvas on all sides.
+- Do not show the oval shape of the face.
+- Do not show a chin, jawline, ears, neck, collar, shoulders, clothes, or hands.
+- The bottom edge of the image must cut the face immediately below the small open mouth, before any chin or jawline can appear.
+- The left and right edges must cut through side hair/cheeks, before ears can appear.
+- The top edge must cut through bangs/hair.
+
+Match reference image 1:
+- 4:3 aspect ratio, preferably 640x480.
+- Face-only extreme close-up.
+- Both eyes open.
+- Small natural open speaking mouth near the bottom edge.
+- Nose is only a tiny dot.
+- Blush marks on both cheeks.
+- Flat clean anime style suitable for later eye/mouth mask generation.
+
+Character to draw from reference image 2:
+- Preserve only the character identity, hairstyle, eye color, hair color, skin tone, and clean anime line art.
+- Long side hair may be visible only where it is cropped by the frame.
+- Do not zoom out to show the complete hairstyle, clothes, or full character design.
+
+Background:
+- Transparent background if supported. Otherwise use a plain flat white background.
+- Never draw a checkerboard pattern, UI, device, title, text, watermark, or scenery.
+
+Negative prompt:
+portrait, full head, full face oval, chin, jawline, ears, neck, collar, uniform, shoulders, body, hands, full buns, visible twin buns, character sheet, grid, multiple poses, text, watermark, UI, device mockup, background scene, big smile, large mouth.
+
+If there is any doubt, prioritize matching the crop and feature positions of reference image 1 over showing the complete character design from reference image 2."""
+
+
 def generate_expression_sheet(
     api_key: str,
     image_path: str,
@@ -137,6 +177,99 @@ def generate_expression_sheet(
                         }
                     },
                 ],
+            }
+        ],
+        "generationConfig": {
+            "responseModalities": ["TEXT", "IMAGE"],
+            "imageConfig": {
+                "aspectRatio": "4:3",
+                "imageSize": image_size,
+            },
+        },
+    }
+
+    url = DEFAULT_ENDPOINT.format(model=model)
+    req = request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        },
+        method="POST",
+    )
+
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            body = response.read()
+    except error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        raise GeminiImageGenerationError(f"Gemini API エラー: HTTP {e.code}\n{detail}") from e
+    except error.URLError as e:
+        raise GeminiImageGenerationError(f"Gemini API に接続できません: {e}") from e
+
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        raise GeminiImageGenerationError("Gemini API のレスポンス解析に失敗しました") from e
+
+    texts = []
+    for candidate in data.get("candidates", []):
+        content = candidate.get("content", {})
+        for part in content.get("parts", []):
+            if "text" in part:
+                texts.append(part["text"])
+                continue
+
+            inline_data = part.get("inline_data") or part.get("inlineData")
+            if inline_data:
+                image_data = inline_data.get("data")
+                output_mime = inline_data.get("mime_type") or inline_data.get("mimeType") or "image/png"
+                if image_data:
+                    return GeminiImageResult(
+                        image_bytes=base64.b64decode(image_data),
+                        mime_type=output_mime,
+                        text="\n".join(texts),
+                    )
+
+    message = data.get("error", {}).get("message") or "\n".join(texts) or "画像が返されませんでした"
+    raise GeminiImageGenerationError(message)
+
+
+def generate_referenced_image(
+    api_key: str,
+    image_paths: list[str],
+    prompt: str,
+    model: str = DEFAULT_MODEL,
+    image_size: str = "2K",
+    timeout: int = 180,
+) -> GeminiImageResult:
+    """Generate one image from multiple reference images using Gemini."""
+    if not api_key:
+        raise GeminiImageGenerationError("GEMINI_API_KEY が設定されていません")
+    if not image_paths:
+        raise GeminiImageGenerationError("参照画像が指定されていません")
+
+    parts = [{"text": prompt}]
+    for image_path in image_paths:
+        source_path = Path(image_path)
+        if not source_path.exists():
+            raise GeminiImageGenerationError(f"画像ファイルが見つかりません: {image_path}")
+        mime_type = mimetypes.guess_type(source_path.name)[0] or "image/png"
+        parts.append(
+            {
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(source_path.read_bytes()).decode("ascii"),
+                }
+            }
+        )
+
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": parts,
             }
         ],
         "generationConfig": {
